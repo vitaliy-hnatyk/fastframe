@@ -1,0 +1,9 @@
+feat: bootstrap FastFrame v0.2 on Netty
+
+- add Java 21 multi-module Maven skeleton (core, Netty adapter, demo)
+- implement Laravel-inspired routes and request/response abstractions
+- support asynchronous controllers and global/group middleware
+- preserve HTTP/1.1 pipelined response order and basic error handling
+- add smoke tests, documentation, changelog, and Git ignore rules
+
+Prototype only; performance relative to Micronaut is not benchmarked.
