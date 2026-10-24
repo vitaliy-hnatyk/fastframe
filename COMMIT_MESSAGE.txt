@@ -1,7 +1,4 @@
-feat(windows): support JDK 21 local launch and Windows benchmarks
+test(demo): ignore JSON object key order in generated routes test
 
-- add PowerShell build, demo, preflight and benchmark commands
-- keep Java 8 global installation unchanged by selecting JDK 21 per shell
-- sample Windows working set and CPU time with ctypes WinAPI
-- extend benchmark tests and CI for Windows compatibility
-- update 0.7.1 artifact names, documentation and changelog
+Parse response JSON and assert typed id/name fields. Preserve unknown-field
+validation and retain Windows annotation processor bootstrap fix.

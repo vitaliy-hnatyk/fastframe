@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.1 — Windows JSON test correction
+
+- Fix `GeneratedRoutesTest.generatedConstructorWiringAndRoute`: compare parsed JSON field values rather than literal key order.
+- Keep runtime serializer and HTTP behavior unchanged; `Map.of` iteration order is not guaranteed.
+- Retain annotation-processor bootstrap fix and configured Temurin JDK 21 for Windows.
+
+
+## 0.7.1 — Annotation processor bootstrap build fix
+
+- Disable annotation processing when compiling `framework-processor` itself (`<proc>none</proc>`).
+- Keep the processor service registration and generated routes in consumer modules unchanged.
+- Fix Windows/Maven build failure: `Provider dev.fastframe.processor.FastFrameProcessor not found`.
+
+
+## 0.7.1 Windows local JDK selection patch
+
+- Prefer `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` in PowerShell helper, with existing JDK detection as fallback.
+- Do not modify system Java 8 or persistent environment variables.
+- Update Windows setup documentation with exact local Java 21 path.
+
 ## 0.7.1 — Windows support for local development and benchmarks
 
 - Native Windows RAM/CPU sampling via WinAPI (`GetProcessMemoryInfo`, `GetProcessTimes`) in `benchmarks/run.py`, no external Python modules.
@@ -121,3 +141,8 @@ All notable changes to FastFrame are documented here. This project is a prototyp
 - Prototype only; no comparative Micronaut benchmarks or production security hardening.
 - Blocking I/O must be dispatched to an appropriate bounded executor.
 - No built-in DI code generation, TLS, HTTP/2, deadlines, or in-flight cancellation.
+
+### Windows processor hotfix (2026-10-24)
+
+- Delay processor service registration until `process-classes` to prevent self-loading during compilation.
+- Add root verification to Windows launcher and ship flat extraction ZIP.

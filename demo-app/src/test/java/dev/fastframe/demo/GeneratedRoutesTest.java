@@ -1,6 +1,7 @@
 package dev.fastframe.demo;
 
 import dev.fastframe.core.http.Request;
+import dev.fastframe.core.http.JsonBody;
 import dev.fastframe.core.http.Response;
 import dev.fastframe.core.http.Router;
 import dev.fastframe.core.http.ValidationException;
@@ -34,7 +35,12 @@ final class GeneratedRoutesTest {
     @Test void generatedConstructorWiringAndRoute() {
         Response result = call("GET", "/api/users/8", Map.of());
         assertEquals(200, result.status());
-        assertEquals("{\"id\":8,\"name\":\"user-8\"}", new String(result.body(), StandardCharsets.UTF_8));
+        String responseJson = new String(result.body(), StandardCharsets.UTF_8);
+        JsonBody json = JsonBody.parse(new Request(
+                "POST", "/test", Map.of(), Map.of("content-type", "application/json"), responseJson));
+        assertEquals(Integer.valueOf(8), json.integer("id", true, 0, Integer.MAX_VALUE));
+        assertEquals("user-8", json.string("name", true, 0, 100));
+        json.finish("id", "name");
         assertEquals("FastFrame", result.headers().get("X-Framework"));
     }
 

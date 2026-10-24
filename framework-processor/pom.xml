@@ -16,4 +16,54 @@
             <version>${project.version}</version>
         </dependency>
     </dependencies>
+    <build>
+        <!-- Exclude an old service descriptor if this patch is unpacked over an
+             existing project. Otherwise Maven copies it before javac runs. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>META-INF/services/javax.annotation.processing.Processor</exclude>
+                </excludes>
+            </resource>
+        </resources>
+        <plugins>
+            <!-- A processor cannot load itself before compilation. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.0</version>
+                <configuration>
+                    <proc>none</proc>
+                </configuration>
+            </plugin>
+            <!-- Publish the service descriptor only AFTER compiling the processor class. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>register-fastframe-processor</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>src/main/processor-descriptor</directory>
+                                    <filtering>false</filtering>
+                                    <includes>
+                                        <include>META-INF/services/javax.annotation.processing.Processor</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

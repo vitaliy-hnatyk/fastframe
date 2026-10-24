@@ -36,12 +36,14 @@ javac -version
 mvn -version
 ```
 
-The function checks `JAVA_HOME` and common JDK 21 installation folders, then prepends its `bin` directory to **the current PowerShell process only**. It does not change the Windows registry or persistent user/system environment variables. In a new terminal, `java -version` may still show Java 8; that is expected.
+The project first checks **`C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot`**, then `JAVA_HOME` and other common JDK 21 installation folders, and prepends the selected JDK's `bin` directory to **the current PowerShell process only**. It does not change the Windows registry or persistent user/system environment variables. In a new terminal, `java -version` may still show Java 8; that is expected.
 
 If the JDK is in a custom directory, set its location for the session:
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.x-hotspot'
+$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot'
+$env:Path = "$env:JAVA_HOME\bin;$env:Path"
+java -version
 .\scripts\run-demo.ps1
 ```
 

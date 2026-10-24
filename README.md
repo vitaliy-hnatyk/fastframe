@@ -4,6 +4,35 @@ Experimental Java 21 / Netty 4.2 framework with compile-time routing, singleton 
 
 > **Not production-ready.** The new JSON parser needs fuzzing/security review; HTTP/1.1 only, no built-in TLS, authentication, metrics, graceful body streaming, full content negotiation, or established Micronaut performance results. Never deploy this demo as a publicly exposed service.
 
+## Windows: JSON test correction
+
+If `GeneratedRoutesTest.generatedConstructorWiringAndRoute` fails because the expected JSON fields are in a different order, replace the test file in `demo-app/src/test/java/dev/fastframe/demo/GeneratedRoutesTest.java` with the updated version. It now parses JSON and asserts field values independently of their order.
+
+From PowerShell, run `Set-ExecutionPolicy -Scope Process Bypass -Force` (only for reviewed scripts, if needed), then `./scripts/run-demo.ps1`. Alternatively: `mvn -B -ntp -pl demo-app -am clean verify`.
+
+## Windows: annotation processor bootstrap build fix
+
+If `framework-processor` fails with
+`Provider dev.fastframe.processor.FastFrameProcessor not found`, update
+`framework-processor/pom.xml` to include `<proc>none</proc>` **only for this
+module**. This prevents javac from trying to load the uncompiled processor
+class from `META-INF/services` during its own compilation; processor discovery
+in `demo-app` and `benchmarks/fastframe-app` is unaffected.
+
+From the project root in PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\run-demo.ps1
+```
+
+The script selects your configured JDK 21 without changing the system Java 8.
+For a build-only check:
+
+```powershell
+mvn -B -ntp -pl demo-app -am clean package
+```
+
 ## New in v0.7.1: Windows development + benchmarking
 
 The Java framework and Netty server now come with **Windows PowerShell 5.1+/PowerShell 7** scripts. You can keep **Java 8 installed globally** and use JDK 21 only in the PowerShell session running FastFrame. No permanent PATH changes are made.

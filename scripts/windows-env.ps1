@@ -4,7 +4,15 @@ $script:FastFrameWindowsRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Pat
 
 function Use-FastFrameJava21 {
     $candidates = [System.Collections.Generic.List[string]]::new()
-    if ($env:JAVA_HOME) { $candidates.Add($env:JAVA_HOME) }
+    # Prefer the requested local Java 21 installation for FastFrame only.
+    # If missing (e.g. on another developer's PC), fall back to automatic detection.
+    $preferredJdk21 = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot'
+    if (Test-Path -LiteralPath $preferredJdk21 -PathType Container) {
+        $candidates.Add($preferredJdk21)
+    }
+    if ($env:JAVA_HOME -and $env:JAVA_HOME -ne $preferredJdk21) {
+        $candidates.Add($env:JAVA_HOME)
+    }
     foreach ($folder in @(
         "$env:ProgramFiles\Eclipse Adoptium",
         "$env:ProgramFiles\Java",

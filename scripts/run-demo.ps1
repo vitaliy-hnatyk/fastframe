@@ -7,6 +7,14 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'windows-env.ps1')
 Use-FastFrameJava21
+$processorPom = Join-Path $root 'framework-processor\pom.xml'
+if (-not (Test-Path -LiteralPath $processorPom -PathType Leaf)) {
+    throw "Could not find $processorPom. Check the project directory."
+}
+$pomContent = Get-Content -LiteralPath $processorPom -Raw
+if ($pomContent -notmatch '<proc>\s*none\s*</proc>') {
+    throw "Old framework-processor/pom.xml at $processorPom. Apply the processor hotfix to this active project directory."
+}
 Push-Location $root
 try {
     if (-not $SkipBuild) {
