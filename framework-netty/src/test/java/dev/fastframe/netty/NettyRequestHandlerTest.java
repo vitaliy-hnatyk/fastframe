@@ -22,6 +22,37 @@ final class NettyRequestHandlerTest {
     }
 
     @Test
+    void syncResponseIsImmediateAndDoesNotScheduleTimeout() {
+        Router router = new Router().get("/instant", req -> Response.text("ok"));
+        EmbeddedChannel channel = new EmbeddedChannel(new NettyRequestHandler(router));
+        try {
+            channel.writeInbound(get("/instant"));
+            FullHttpResponse result = channel.readOutbound();
+            assertNotNull(result);
+            try {
+                assertEquals(200, result.status().code());
+                assertEquals("ok", result.content().toString(StandardCharsets.UTF_8));
+            } finally { ReferenceCountUtil.release(result); }
+            assertEquals(-1, channel.runScheduledPendingTasks(), "synchronous response must not have a timeout task");
+        } finally { channel.finishAndReleaseAll(); }
+    }
+
+    @Test
+    void queryAndPercentEncodingStillDecodeCorrectly() {
+        Router router = new Router().get("/item/{id}", req ->
+                Response.text(req.routeParam("id") + ":" + req.query("q")));
+        EmbeddedChannel channel = new EmbeddedChannel(new NettyRequestHandler(router));
+        try {
+            channel.writeInbound(get("/item/%34%32?q=hello%20world"));
+            FullHttpResponse result = channel.readOutbound();
+            assertNotNull(result);
+            try {
+                assertEquals("42:hello world", result.content().toString(StandardCharsets.UTF_8));
+            } finally { ReferenceCountUtil.release(result); }
+        } finally { channel.finishAndReleaseAll(); }
+    }
+
+    @Test
     void asyncResponseIsWrittenAfterFutureCompletes() {
         CompletableFuture<Response> future = new CompletableFuture<>();
         Router router = new Router().getAsync("/async", req -> future);

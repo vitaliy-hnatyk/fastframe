@@ -1,0 +1,66 @@
+name: Java CI
+on:
+  push:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Compile and run tests
+        run: mvn -B -ntp -pl demo-app -am clean verify
+      - name: Processor smoke and negative tests
+        run: bash scripts/core-smoke.sh
+      - name: Benchmark source smoke tests (no external load)
+        run: bash scripts/benchmark-smoke.sh
+      - name: Build FastFrame benchmark app
+        run: mvn -B -ntp -pl benchmarks/fastframe-app -am clean package
+      - name: Build Micronaut benchmark app
+        run: mvn -B -ntp -f benchmarks/micronaut-app/pom.xml clean package
+      - name: HTTP preflight both benchmark applications
+        run: python3 benchmarks/preflight.py
+
+  macos-benchmark-metrics:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test macOS process metrics and CSV parsing
+        run: python3 -m unittest discover -s benchmarks/tests -v
+
+  windows-benchmark-compatibility:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run Windows backend and CSV unit tests
+        run: python -m unittest discover -s benchmarks/tests -v
+      - name: Build both benchmark servers using PowerShell
+        shell: pwsh
+        run: ./benchmarks/build.ps1
+      - name: HTTP preflight on Windows
+        shell: pwsh
+        run: ./benchmarks/preflight.ps1
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: HTTP load smoke test on Windows
+        shell: pwsh
+        run: |
+          go install github.com/rakyll/hey@latest
+          $env:Path = "$(go env GOPATH)\bin;$env:Path"
+          ./benchmarks/run.ps1 -SkipBuild -SkipPreflight -Duration 2s -Warmup 1s -Concurrency 8 -Repeats 1 -Cases plain

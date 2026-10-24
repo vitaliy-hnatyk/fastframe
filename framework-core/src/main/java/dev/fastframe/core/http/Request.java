@@ -13,6 +13,7 @@ public final class Request {
     private final Map<String, String> headers;
     private final String body;
     private Map<String, String> routeParameters = Map.of();
+    private final CancellationToken cancellation = new CancellationToken();
 
     public Request(String method, String path, Map<String, List<String>> queryParameters,
                    Map<String, String> headers, String body) {
@@ -23,6 +24,7 @@ public final class Request {
         this.body = Objects.requireNonNull(body, "body");
     }
 
+    public CancellationToken cancellation() { return cancellation; }
     public String method() { return method; }
     public String path() { return path; }
     public String body() { return body; }

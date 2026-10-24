@@ -1,9 +1,7 @@
-feat: bootstrap FastFrame v0.2 on Netty
+feat(windows): support JDK 21 local launch and Windows benchmarks
 
-- add Java 21 multi-module Maven skeleton (core, Netty adapter, demo)
-- implement Laravel-inspired routes and request/response abstractions
-- support asynchronous controllers and global/group middleware
-- preserve HTTP/1.1 pipelined response order and basic error handling
-- add smoke tests, documentation, changelog, and Git ignore rules
-
-Prototype only; performance relative to Micronaut is not benchmarked.
+- add PowerShell build, demo, preflight and benchmark commands
+- keep Java 8 global installation unchanged by selecting JDK 21 per shell
+- sample Windows working set and CPU time with ctypes WinAPI
+- extend benchmark tests and CI for Windows compatibility
+- update 0.7.1 artifact names, documentation and changelog

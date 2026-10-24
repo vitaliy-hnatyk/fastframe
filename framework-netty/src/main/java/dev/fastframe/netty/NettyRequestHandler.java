@@ -17,90 +17,177 @@ import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.QueryStringDecoder;
+import io.netty.util.concurrent.ScheduledFuture;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
-/** Netty HTTP/1.1 adapter: async completion, pipelining order, and per-channel read throttling. */
+/** Event-loop-confined HTTP/1.1 adapter. Shares a request semaphore across server channels. */
 final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
-    private static final int HIGH_WATER = 64;
-    private static final int LOW_WATER = 32;
     private final Router router;
+    private final NettyOptions options;
+    private final Semaphore permits;
     private final ArrayDeque<Pending> responses = new ArrayDeque<>();
     private boolean closing;
 
-    NettyRequestHandler(Router router) { this.router = router; }
+    NettyRequestHandler(Router router) {
+        this(router, NettyOptions.defaults(), new Semaphore(NettyOptions.defaults().maxConcurrentRequests()));
+    }
+
+    NettyRequestHandler(Router router, NettyOptions options, Semaphore permits) {
+        this.router = Objects.requireNonNull(router, "router");
+        this.options = Objects.requireNonNull(options, "options");
+        this.permits = Objects.requireNonNull(permits, "permits");
+    }
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest incoming) {
         if (closing) return;
+        // AutoRead is advisory (a single socket read can contain many pipelined requests).
+        // Enforce an absolute bound even when additional requests were already decoded.
+        if (responses.size() >= options.maxPipelinedRequestsPerConnection()) {
+            closing = true;
+            abandonQueued();
+            ctx.close();
+            return;
+        }
         Pending pending = new Pending(incoming.protocolVersion(), incoming.method().name(),
                 HttpUtil.isKeepAlive(incoming));
         responses.addLast(pending);
-        if (responses.size() >= HIGH_WATER) ctx.channel().config().setAutoRead(false);
+        if (responses.size() >= options.maxPipelinedRequestsPerConnection()) {
+            ctx.channel().config().setAutoRead(false);
+        }
 
         if (!incoming.decoderResult().isSuccess()) {
-            finish(ctx, pending, Response.text("Bad Request").status(400));
+            finish(ctx, pending, ErrorResponses.badRequest());
             return;
         }
+        if (!permits.tryAcquire()) {
+            finish(ctx, pending, ErrorResponses.overloaded());
+            return;
+        }
+        pending.hasPermit = true;
         try {
-            QueryStringDecoder uri = new QueryStringDecoder(incoming.uri(), StandardCharsets.UTF_8);
-            Map<String, String> headers = new HashMap<>();
-            incoming.headers().forEach(entry -> headers.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue()));
-            // Copy the body NOW: SimpleChannelInboundHandler releases FullHttpRequest on return.
-            String body = incoming.content().toString(StandardCharsets.UTF_8);
-            Request request = new Request(incoming.method().name(), uri.path(), uri.parameters(), headers, body);
-            CompletionStage<Response> stage = router.dispatchAsync(request);
+            // Most benchmark and API paths are already plain ASCII without a query.
+            // Keep QueryStringDecoder for percent-encoded, query or absolute URIs.
+            String rawUri = incoming.uri();
+            boolean plainPath = rawUri.startsWith("/") && rawUri.indexOf('?') < 0
+                    && rawUri.indexOf('%') < 0 && rawUri.indexOf('#') < 0;
+            QueryStringDecoder uri = plainPath ? null : new QueryStringDecoder(rawUri, StandardCharsets.UTF_8);
+            String path = plainPath ? rawUri : uri.path();
+            Map<String, java.util.List<String>> queries = plainPath ? Map.of() : uri.parameters();
+            Map<String, String> headers = new HashMap<>(incoming.headers().size());
+            incoming.headers().forEach(entry ->
+                    headers.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue()));
+            // FullHttpRequest is auto-released on method exit; copy the body before handing it off.
+            // Reject malformed UTF-8 instead of silently replacing it (important for JSON).
+            String decoded;
+            if (!incoming.content().isReadable()) {
+                decoded = ""; // avoid allocating a decoder for empty request bodies
+            } else {
+                ByteBuffer input = incoming.content().nioBuffer();
+                try {
+                    decoded = StandardCharsets.UTF_8.newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT).decode(input).toString();
+                } catch (CharacterCodingException invalidUtf8) {
+                    finish(ctx, pending, ErrorResponses.badRequest());
+                    return;
+                }
+            }
+            Request request = new Request(incoming.method().name(), path, queries, headers, decoded);
+            pending.request = request;
+
+            Object result = router.dispatchDirect(request);
+            if (result instanceof Response synchronousResponse) {
+                // Sync route: no CompletionStage, callback registration or scheduled timeout.
+                finish(ctx, pending, synchronousResponse);
+                return;
+            }
+            @SuppressWarnings("unchecked")
+            CompletionStage<Response> stage = (CompletionStage<Response>) result;
             stage.whenComplete((response, error) -> {
-                Runnable complete = () -> {
-                    if (!ctx.channel().isActive()) return;
+                Runnable completion = () -> {
+                    if (!ctx.channel().isActive() || pending.finished) return;
                     if (error == null && response != null) finish(ctx, pending, response);
-                    else finish(ctx, pending, failure(error));
+                    else finish(ctx, pending, ErrorResponses.from(error != null ? error :
+                            new NullPointerException("Controller returned null response")));
                 };
-                if (ctx.executor().inEventLoop()) complete.run();
+                if (ctx.executor().inEventLoop()) completion.run();
                 else {
-                    try { ctx.executor().execute(complete); }
+                    try { ctx.executor().execute(completion); }
                     catch (RejectedExecutionException ignored) { /* channel is shutting down */ }
                 }
             });
+            // The immediate completion case also avoids scheduling a timer. Pending
+            // asynchronous requests still get the same timeout and cancellation.
+            if (!pending.finished) {
+                pending.timeout = ctx.executor().schedule(() -> {
+                    if (!pending.finished) {
+                        finish(ctx, pending, ErrorResponses.timeout());
+                        request.cancellation().cancel();
+                    }
+                }, options.requestTimeout().toNanos(), TimeUnit.NANOSECONDS);
+            }
         } catch (Throwable ex) {
-            finish(ctx, pending, failure(ex));
+            finish(ctx, pending, ErrorResponses.from(ex));
         }
     }
 
-    private static Response failure(Throwable error) {
-        Throwable cause = error;
-        while (cause instanceof CompletionException && cause.getCause() != null) cause = cause.getCause();
-        if (cause instanceof RejectedExecutionException) {
-            return Response.text("Service Unavailable").status(503).header("Retry-After", "1");
-        }
-        // Never expose exceptions to HTTP clients.
-        System.err.println("Request failed: " + cause);
-        return Response.text("Internal Server Error").status(500);
-    }
-
+    /** Must run on this channel's event loop. */
     private void finish(ChannelHandlerContext ctx, Pending pending, Response response) {
+        if (pending.finished) return; // timeout, completion and close may race
+        pending.finished = true;
         pending.response = response;
+        release(pending, false);
         drain(ctx);
     }
 
-    /** Drain only in request order so HTTP/1.1 pipelining stays valid. Event-loop only. */
+    private void release(Pending pending, boolean cancelRequest) {
+        if (pending.timeout != null) {
+            pending.timeout.cancel(false);
+            pending.timeout = null;
+        }
+        if (cancelRequest && pending.request != null) pending.request.cancellation().cancel();
+        if (pending.hasPermit) {
+            pending.hasPermit = false;
+            permits.release();
+        }
+    }
+
+    private void abandonQueued() {
+        for (Pending pending : responses) {
+            if (!pending.finished) {
+                pending.finished = true;
+                release(pending, true);
+            }
+        }
+        responses.clear();
+    }
+
+    /** Drain only in request order to preserve HTTP/1.1 pipelining. */
     private void drain(ChannelHandlerContext ctx) {
         while (!responses.isEmpty() && responses.peekFirst().response != null && !closing) {
             Pending ready = responses.removeFirst();
             send(ctx, ready);
             if (!ready.keepAlive) {
                 closing = true;
-                responses.clear();
+                abandonQueued();
             }
         }
-        if (!closing && responses.size() <= LOW_WATER && !ctx.channel().config().isAutoRead()) {
+        if (!closing && responses.size() <= options.maxPipelinedRequestsPerConnection() / 2
+                && !ctx.channel().config().isAutoRead()) {
             ctx.channel().config().setAutoRead(true);
         }
     }
@@ -116,7 +203,6 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
                 HttpResponseStatus.valueOf(result.status()), buffer);
         output.headers().set(HttpHeaderNames.CONTENT_TYPE, result.contentType());
         for (Map.Entry<String, String> header : result.headers().entrySet()) {
-            // These are set by the transport, never accept competing framing headers.
             if (!header.getKey().equalsIgnoreCase("Content-Length")
                     && !header.getKey().equalsIgnoreCase("Transfer-Encoding")
                     && !header.getKey().equalsIgnoreCase("Connection")) {
@@ -131,13 +217,14 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        responses.clear(); // Futures can finish later; callback checks isActive().
+        closing = true;
+        abandonQueued();
         super.channelInactive(ctx);
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        System.err.println("Connection error: " + cause);
+        // Transport errors are not application 500 responses; connection is no longer reliable.
         ctx.close();
     }
 
@@ -146,6 +233,11 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         private final String method;
         private final boolean keepAlive;
         private Response response;
+        private Request request;
+        private ScheduledFuture<?> timeout;
+        private boolean finished;
+        private boolean hasPermit;
+
         private Pending(HttpVersion version, String method, boolean keepAlive) {
             this.version = version;
             this.method = method;

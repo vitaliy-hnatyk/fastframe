@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Independent Maven project, deliberately not part of FastFrame's reactor. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>dev.fastframe.bench</groupId><artifactId>benchmark-micronaut</artifactId><version>0.7.1</version>
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <micronaut.platform.version>4.10.21</micronaut.platform.version>
+        <micronaut.core.version>4.10.31</micronaut.core.version>
+        <micronaut.serde.version>2.16.2</micronaut.serde.version>
+    </properties>
+    <dependencyManagement><dependencies>
+        <dependency><groupId>io.micronaut.platform</groupId><artifactId>micronaut-platform</artifactId>
+            <version>${micronaut.platform.version}</version><type>pom</type><scope>import</scope></dependency>
+    </dependencies></dependencyManagement>
+    <dependencies>
+        <dependency><groupId>io.micronaut</groupId><artifactId>micronaut-runtime</artifactId></dependency>
+        <dependency><groupId>io.micronaut</groupId><artifactId>micronaut-http-server-netty</artifactId></dependency>
+        <dependency><groupId>io.micronaut.serde</groupId><artifactId>micronaut-serde-jackson</artifactId><version>${micronaut.serde.version}</version></dependency>
+    </dependencies>
+    <build><plugins>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.0</version>
+            <configuration><release>21</release>
+                <!-- Apply the BOM to the processors' transitive dependencies. -->
+                <annotationProcessorPathsUseDepMgmt>true</annotationProcessorPathsUseDepMgmt>
+                <annotationProcessorPaths>
+                <path><groupId>io.micronaut</groupId><artifactId>micronaut-inject-java</artifactId>
+                    <version>${micronaut.core.version}</version></path>
+                <!-- Keep Micronaut Core visible to the isolated annotation processor
+                     classloader (e.g. io.micronaut.core.annotation.NullMarked). -->
+                <path><groupId>io.micronaut</groupId><artifactId>micronaut-core</artifactId>
+                    <version>${micronaut.core.version}</version></path>
+                <path><groupId>io.micronaut.serde</groupId><artifactId>micronaut-serde-processor</artifactId>
+                    <version>${micronaut.serde.version}</version></path>
+            </annotationProcessorPaths><compilerArgs>
+                <arg>-Amicronaut.processing.group=dev.fastframe.bench</arg>
+                <arg>-Amicronaut.processing.module=benchmark-micronaut</arg>
+            </compilerArgs></configuration>
+        </plugin>
+        <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.1</version>
+            <executions><execution><phase>package</phase><goals><goal>shade</goal></goals>
+                <configuration><createDependencyReducedPom>false</createDependencyReducedPom>
+                    <transformers>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <mainClass>dev.fastframe.micronautbench.Application</mainClass>
+                        </transformer>
+                    </transformers>
+                </configuration>
+            </execution></executions>
+        </plugin>
+    </plugins></build>
+</project>

@@ -16,6 +16,27 @@ final class RouterTest {
     }
 
     @Test
+    void synchronousRoutesAvoidCompletionStageAndPreservePrecedence() throws Exception {
+        Router router = new Router()
+                .get("/users/{id}", r -> Response.text("param:" + r.routeParam("id")))
+                .get("/users/new", r -> Response.text("new"));
+        assertInstanceOf(Response.class, router.dispatchDirect(request("GET", "/users/new")));
+        assertEquals("new", body((Response) router.dispatchDirect(request("GET", "/users/new"))));
+        assertEquals("param:19", body((Response) router.dispatchDirect(request("GET", "/users/19"))));
+        assertEquals("new", body(router.dispatchAsync(request("GET", "/users/new")).toCompletableFuture().join()));
+    }
+
+    @Test
+    void middlewareAndAsyncRoutesStillReturnStages() throws Exception {
+        Router async = new Router().getAsync("/wait", r -> new CompletableFuture<>());
+        assertInstanceOf(java.util.concurrent.CompletionStage.class, async.dispatchDirect(request("GET", "/wait")));
+        Router withMiddleware = new Router().use((r, next) -> next.proceed(r));
+        withMiddleware.get("/ok", r -> Response.text("ok"));
+        assertInstanceOf(java.util.concurrent.CompletionStage.class,
+                withMiddleware.dispatchDirect(request("GET", "/ok")));
+    }
+
+    @Test
     void matchesStaticAndParameterizedRoutes() throws Exception {
         Router router = new Router();
         router.get("/users/new/details", r -> Response.text("details"));

@@ -14,17 +14,26 @@ import io.netty.handler.codec.http.HttpServerCodec;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
+import java.util.concurrent.Semaphore;
 
 /** HTTP/1.1 server; use nonblocking handlers only. */
 public final class NettyServer implements AutoCloseable {
     private final Router router;
     private final String host;
     private final int port;
+    private final NettyOptions options;
+    private final Semaphore permits;
     private EventLoopGroup boss;
     private EventLoopGroup workers;
     private Channel serverChannel;
 
     public NettyServer(Router router, String host, int port) {
+        this(router, host, port, NettyOptions.defaults());
+    }
+
+    public NettyServer(Router router, String host, int port, NettyOptions options) {
+        this.options = Objects.requireNonNull(options, "options");
+        this.permits = new Semaphore(options.maxConcurrentRequests());
         this.router = Objects.requireNonNull(router, "router");
         this.host = Objects.requireNonNull(host, "host");
         if (port < 0 || port > 65535) throw new IllegalArgumentException("Invalid port");
@@ -45,8 +54,8 @@ public final class NettyServer implements AutoCloseable {
                         protected void initChannel(SocketChannel channel) {
                             channel.pipeline()
                                     .addLast(new HttpServerCodec())
-                                    .addLast(new HttpObjectAggregator(64 * 1024))
-                                    .addLast(new NettyRequestHandler(router));
+                                    .addLast(new HttpObjectAggregator(options.maxRequestBytes()))
+                                    .addLast(new NettyRequestHandler(router, options, permits));
                         }
                     });
             serverChannel = bootstrap.bind(host, port).sync().channel();

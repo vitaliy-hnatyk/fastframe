@@ -3,6 +3,8 @@ package dev.fastframe.demo;
 import dev.fastframe.core.http.Router;
 import dev.fastframe.demo.routes.ApiRoutes;
 import dev.fastframe.netty.NettyServer;
+import dev.fastframe.netty.NettyOptions;
+import java.time.Duration;
 
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -17,7 +19,12 @@ public final class Application {
         Router router = new Router();
         ApiRoutes.register(router, blockingExecutor);
 
-        try (NettyServer server = new NettyServer(router, "0.0.0.0", port)) {
+        NettyOptions options = new NettyOptions(
+                Integer.parseInt(System.getenv().getOrDefault("MAX_IN_FLIGHT", "256")),
+                Integer.parseInt(System.getenv().getOrDefault("MAX_PIPELINED", "64")),
+                Integer.parseInt(System.getenv().getOrDefault("MAX_REQUEST_BYTES", "65536")),
+                Duration.ofMillis(Long.parseLong(System.getenv().getOrDefault("REQUEST_TIMEOUT_MS", "10000"))));
+        try (NettyServer server = new NettyServer(router, "0.0.0.0", port, options)) {
             server.start();
             System.out.println("FastFrame demo listening on http://localhost:" + server.boundPort());
             Runtime.getRuntime().addShutdownHook(new Thread(server::close));

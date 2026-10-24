@@ -15,3 +15,8 @@ Thumbs.db
 *.log
 *.swp
 *.swo
+
+# Generated benchmark measurements
+benchmarks/results/
+**/__pycache__/
+*.pyc

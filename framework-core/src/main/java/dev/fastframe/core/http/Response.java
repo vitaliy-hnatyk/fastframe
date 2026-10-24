@@ -30,14 +30,23 @@ public final class Response {
                 Objects.requireNonNull(alreadySerializedJson).getBytes(StandardCharsets.UTF_8), Map.of());
     }
 
+    /** Serialize supported Java values safely. The original json(String) accepts raw JSON. */
+    public static Response jsonValue(Object value) {
+        return json(Json.stringify(value));
+    }
+
     public Response status(int code) { return new Response(code, contentType, body, headers); }
 
     public Response header(String name, String value) {
         if (!name.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")) {
             throw new IllegalArgumentException("Invalid header name");
         }
-        if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
-            throw new IllegalArgumentException("Invalid header value");
+        Objects.requireNonNull(value, "value");
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7f) {
+                throw new IllegalArgumentException("Invalid header value");
+            }
         }
         Map<String, String> copy = new LinkedHashMap<>(headers);
         copy.put(name, value);
