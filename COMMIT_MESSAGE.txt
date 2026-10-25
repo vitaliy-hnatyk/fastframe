@@ -1,7 +1,6 @@
-perf(json): emit UTF-8 directly and add JFR benchmark tooling
+docs(brand): add FastFrame logo and expand v0.21 README
 
-- avoid intermediate JSON String and second UTF-8 encoding
-- reduce Netty content-type and CORS response allocations
-- track benchmark JAR versions from Maven coordinates
-- add Windows JFR profile, allocation probe and median comparison
-- test Unicode JSON parity and benchmark tooling
+- Include approved logo artwork and documentation-ready assets
+- Replace accumulated snapshot notes with a navigable project README
+- Document Java 21/Windows setup, modules, examples, testing and benchmarks
+- Retain production-readiness warnings and link detailed guides

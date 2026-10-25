@@ -1,3 +1,9 @@
+## Documentation & branding refresh (v0.21 snapshot)
+
+- Added the selected FastFrame brand logo to `docs/assets/`, preserving the original artwork.
+- Rebuilt the root README as a single up-to-date project overview for v0.21, including a Windows/Java 21 quickstart, module map, examples, benchmarks, deployment cautions and documentation index.
+- No Java runtime behavior, Maven versions or benchmark measurements were changed by this documentation-only update.
+
 ## v0.21.0 — Performance & Memory (experimental)
 
 - Add direct bounded UTF-8 encoding (`Json.utf8`) and remove temporary JSON strings from `Response.jsonValue`.

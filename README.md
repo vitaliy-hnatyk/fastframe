@@ -1,396 +1,312 @@
-# FastFrame v0.21 — Performance & Memory Optimizations
+<div align="center">
 
-**New in v0.21:** direct UTF-8 JSON response encoding, lower-allocation HTTP paths, Windows JFR profiling and fixed benchmark JAR version resolution. See [PERFORMANCE.md](PERFORMANCE.md) for commands, evidence, limits and repeatable benchmark procedure.
+<img src="docs/assets/fastframe-logo.png" alt="FastFrame — Build faster. Go further." width="470">
 
-# FastFrame v0.19 — Production Hardening (experimental)
+# FastFrame
 
-**New in v0.19:** server-generated `X-Request-ID`, bounded Prometheus-style HTTP metrics, optional structured access-log payload, liveness/readiness endpoints, and graceful draining of active Netty requests. See [OBSERVABILITY.md](OBSERVABILITY.md) for configuration, security boundaries, lifecycle and tests.
+**A Laravel-inspired, modular Java framework built on Netty.**
 
-Windows with Java 21: run `.\scripts\observability-smoke.ps1`, then `.\scripts\run-demo.ps1`. System Java 8 can remain installed; Windows scripts prefer JDK 21.
+Build readable REST APIs with compile-time routing, dependency injection, validation, database tools, queues, and optional infrastructure integrations — while keeping control over HTTP performance and memory use.
 
-**Caution:** Complete Maven/Netty build has not yet been run in this authoring environment. v0.19 is not production certified. Metrics are localhost-only and disabled by default. OpenTelemetry is not yet implemented.
+**Java 21** · **Netty 4.2** · **Maven** · **Windows / Linux / macOS**
 
----
+[Getting started](#getting-started) · [Features](#features-at-a-glance) · [Examples](#write-your-first-controller) · [Benchmarks](#performance-and-benchmarks) · [Documentation](#documentation)
 
-## FastFrame v0.19 — Feature Testing
+</div>
 
-New test-scoped `framework-testing` module: real Netty HTTP feature tests, JSON assertions, Bearer-auth tests, isolated H2 databases, typed factories, and mock outbound HTTP. See [TESTING.md](TESTING.md).
+> [!IMPORTANT]
+> **Status: v0.21.0-SNAPSHOT — experimental.** FastFrame is an evolving prototype, **not production-certified**. Security, compatibility and performance claims require independent validation. Some integrations need external services, and a complete cross-platform Maven/integration test pass has not been independently confirmed for this source snapshot.
 
-Windows: `.\scripts\testing-smoke.ps1` (JDK 21). This is an experimental release, not production-ready.
+## Why FastFrame?
 
----
+FastFrame is designed around a straightforward idea: **the developer experience of Laravel, using Java's type system and an explicit high-performance HTTP stack**.
 
-## FastFrame v0.17 — Providers & Events
+- **Familiar conventions:** annotated controllers, request DTOs, middleware, repositories, migrations and Artisan-inspired code generators.
+- **Compile-time wiring:** an annotation processor generates routes, constructor-injection code and supported record DTO bindings. Controller discovery does not rely on per-request reflection.
+- **Fast-path awareness:** synchronous routes avoid unnecessary future allocations; v0.21 can encode supported JSON response values directly to UTF-8.
+- **Modularity:** include only the components you use. Redis, S3, testing and other integrations are separate Maven modules.
+- **Operational foundations:** request IDs, optional metrics, health endpoints, request limits, CORS and a graceful shutdown mechanism.
 
-New `framework-application` / `framework-events` modules and Artisan-like `make:provider` / `make:listener`. See [BOOTSTRAP_EVENTS.md](BOOTSTRAP_EVENTS.md).
+The project aims to be competitive with mature frameworks such as Micronaut, **not to claim it is currently faster**. Workload, hardware and JVM settings determine real results.
 
-# FastFrame v0.16 — More Artisan generators + .env configuration
+## Features at a glance
 
-**New:** `framework-config` (optional `.env`, immutable typed configuration, environment variable overrides) and the CLI generators `make:service`, `make:request`, `make:middleware`, `make:job`. Previous CLI commands remain available. See [CONFIG.md](CONFIG.md) and [CLI.md](CLI.md).
+| Area | Available in this prototype | Module / detailed guide |
+| --- | --- | --- |
+| HTTP / routing | Netty HTTP/1.1, route parameters, grouped routes, sync/async handlers, middleware | `framework-core`, `framework-netty` |
+| Compile-time tooling | `@Controller`, `@Get`, `@Post`, generated route registration, constructor DI and record DTO binding | `framework-processor` |
+| Validation / JSON | `@Body`, `@Required`, `@Size`, `@Min`, `@Max`, 400 / 415 / 422 error handling, UTF-8 serialization | `framework-core`, [performance](PERFORMANCE.md) |
+| Database | JDBC Query Builder, parameterized CRUD and transactions | `framework-database`, [database](DATABASE.md) |
+| ORM / migrations | Java record models, generated mappers, repositories, versioned SQL migrations | `framework-orm`, `framework-migrations`, [ORM guide](ORM_MIGRATIONS.md) |
+| Auth | HS256 Bearer JWT, password hashing, roles and permissions | `framework-auth`, [authorization](AUTHORIZATION.md) |
+| Cache | Bounded in-memory TTL/LRU cache; optional Redis adapter | `framework-cache`, `framework-cache-redis`, [cache](CACHE.md) |
+| Jobs / scheduling | Delayed jobs, retry/backoff, Redis-backed workers, cron scheduling | `framework-queue`, `framework-queue-redis`, [queues](QUEUE_SCHEDULER.md) |
+| Storage / HTTP client | Bounded local files, optional S3, JDK asynchronous HTTP client | `framework-storage`, `framework-storage-s3`, `framework-http-client`, [storage](STORAGE_HTTP.md) |
+| App lifecycle | Service providers, events and lifecycle hooks | `framework-application`, `framework-events`, [bootstrap](BOOTSTRAP_EVENTS.md) |
+| Developer tooling | Code generation (`make:*`), compile-time `route:list`, `.env` config | `framework-cli`, `framework-config`, [CLI](CLI.md), [config](CONFIG.md) |
+| Testing | HTTP feature tests, JSON assertions, H2 fixtures, HTTP mocks | `framework-testing`, [testing](TESTING.md) |
+| Operations / security | Health checks, request IDs, metrics, security headers, CORS, local rate limiting | `framework-observability`, `framework-security`, [observability](OBSERVABILITY.md), [security](SECURITY.md) |
 
-**Windows PowerShell (JDK 21; global Java 8 remains untouched):**
+> These APIs are **FastFrame's own implementations inspired by Laravel concepts**, not a Laravel compatibility layer or a drop-in replacement for Spring/Micronaut.
+
+## Getting started
+
+### Requirements
+
+- **JDK 21** (`java` and `javac`), e.g. Eclipse Temurin.
+- **Maven 3.9+** to build the multi-module project.
+- **Windows PowerShell 5.1+ / PowerShell 7** on Windows; a shell on Linux/macOS.
+- Optional: Python 3.10+ and [`hey`](https://github.com/rakyll/hey) for HTTP benchmarks; Redis for Redis-backed cache and queues.
+
+### Windows 10/11 (PowerShell)
+
+The scripts prefer the already configured JDK directory:
+
+```text
+C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot
+```
+
+**Java 8 may remain the global default** for existing applications: the included PowerShell scripts select Java 21 only for their own session and child processes.
 
 ```powershell
 cd C:\xampp\www\fastframe
-Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\config-smoke.ps1
-.\scripts\cli-smoke.ps1
-.\scripts\ff.ps1 make:service Invoice
-.\scripts\ff.ps1 make:request CreateInvoice
-.\scripts\ff.ps1 make:middleware Audit
-.\scripts\ff.ps1 make:job SendInvoice
+
+# If your policy blocks scripts, review them before enabling a session-only exception:
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+
+# Build, test, and start the demo at http://127.0.0.1:8080
 .\scripts\run-demo.ps1
 ```
 
-**Security:** do not store a live `.env` with secrets under `C:\xampp\www` (Apache docroot). Place it outside the web root and use `FF_ENV_FILE`; `.htaccess` is only a secondary measure. `.env` is ignored by Git; `.env.example` contains no credentials. This version is a development prototype, **not production-ready**.
-
----
-
-# FastFrame v0.15 — Artisan-style CLI (Java 21 / Netty)
-
-**New:** `framework-cli` + `scripts/ff.ps1` (Windows) and `scripts/ff.sh` (macOS/Linux) with `make:controller`, `make:model`, `make:migration`, and `route:list`. Generates code compatible with existing FastFrame annotations and ORM models; `route:list` shows **annotated routes only**, using metadata generated at compile time. See [CLI.md](CLI.md) for exact commands, known limitations and Windows JDK 21 instructions.
-
-PowerShell quick start from the project root:
+In **another** PowerShell window:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\cli-smoke.ps1
-.\scripts\ff.ps1 make:controller Post
-.\scripts\ff.ps1 make:model Post
-.\scripts\ff.ps1 make:migration create_posts
-.\scripts\ff.ps1 route:list
+curl.exe -i http://127.0.0.1:8080/api/health
+curl.exe -i http://127.0.0.1:8080/_health/live
+curl.exe -i http://127.0.0.1:8080/_health/ready
 ```
 
-CLI is dependency-free at runtime; everything else in v0.14 remains available. **Experimental, not production-ready.**
+Expected `/api/health` JSON contains `"status":"ok"` (object field order is not guaranteed).
 
----
-
-# FastFrame v0.14 — Storage + Async HTTP Client (Java 21 / Netty)
-
-**New modules:** `framework-storage` (bounded local file CRUD), optional `framework-storage-s3` (AWS SDK v2), and `framework-http-client` (JDK `HttpClient.sendAsync`, timeouts and response size limits). Binary `application/octet-stream` request bodies are preserved without UTF-8 conversion; upload demo routes are **off by default**. See [STORAGE_HTTP.md](STORAGE_HTTP.md) for API examples, security constraints and Windows steps.
-
-Windows: `./scripts/storage-smoke.ps1` followed by `./scripts/run-demo.ps1`. Existing queue/cache/ORM/auth features remain available. **Experimental — not production-ready.**
-
----
-
-# FastFrame v0.13 — Queues & Scheduler (Java 21 / Netty)
-
-**New:** optional `framework-cache` (bounded in-memory TTL/LRU, `get`, `put`, `add`,
-`remember`, `rememberForever`, `forever`, `forget`) and optional
-`framework-cache-redis` (Lettuce Redis `SET NX PX`).
-
-See [CACHE.md](CACHE.md) for the full API, Redis URI security guidance, Windows build,
-and blocking Redis/Netty precautions.
-
-Windows quick start:
+To build and verify without starting the server:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\cache-smoke.ps1
-.\scripts\run-demo.ps1
-# In another terminal: curl.exe http://localhost:8080/api/cache/demo
+mvn -B -ntp -pl demo-app -am clean verify
 ```
 
-**Experimental, not production-ready.** Redis integration tests require an external Redis instance;
-full Maven/Netty integration has not been performed in the source-generation environment.
+**Important for XAMPP users:** `C:\xampp\www` is typically an Apache document root. Keep secrets and uploaded files outside it; do not expose this checkout to the public internet. See [Windows setup](WINDOWS.md), [configuration](CONFIG.md), and [production guidance](PRODUCTION.md).
 
----
-
-# FastFrame v0.10.0 — Java 21 + Netty + typed ORM + SQL migrations
-
-**Windows ready** — preserves the Java 21 auto-detection, Windows benchmark scripts and annotation processor fixes from prior releases. See [ORM_MIGRATIONS.md](ORM_MIGRATIONS.md) for working model/SQL examples.
-
-Quick start (PowerShell from the repository root):
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force
-$env:FF_DB_URL = 'jdbc:h2:mem:fastframe;DB_CLOSE_DELAY=-1'
-.\scripts\run-demo.ps1
-# another terminal: curl.exe http://localhost:8080/api/db/users
-```
-
-Verify: `mvn -B -ntp -pl demo-app -am clean verify` or `./scripts/orm-smoke.ps1` (PowerShell). For explicit SQL migrations use `./scripts/migrate.ps1` (FF_DB_URL required). **No blocking database access inside Netty event loops.**
-
----
-
-# FastFrame v0.9 — optional Laravel-inspired JDBC database module
-
-**New:** `framework-database` with parameterized Query Builder, CRUD and transactions. See [DATABASE.md](DATABASE.md) for Java API, Windows run commands, testing, and limitations. This builds on v0.7.1 (annotation processor & JSON-test fixes preserved); v0.8 performance profiling remains a separate future milestone.
-
-# FastFrame v0.7.1 — Laravel-inspired Java + Netty framework (prototype)
-
-Experimental Java 21 / Netty 4.2 framework with compile-time routing, singleton constructor DI, async middleware/controllers, and **JSON request binding to Java record DTOs with field validation**. The processor generates Java source so there is no runtime reflection to find controllers or construct request DTOs.
-
-> **Not production-ready.** The new JSON parser needs fuzzing/security review; HTTP/1.1 only, no built-in TLS, authentication, metrics, graceful body streaming, full content negotiation, or established Micronaut performance results. Never deploy this demo as a publicly exposed service.
-
-## Windows: JSON test correction
-
-If `GeneratedRoutesTest.generatedConstructorWiringAndRoute` fails because the expected JSON fields are in a different order, replace the test file in `demo-app/src/test/java/dev/fastframe/demo/GeneratedRoutesTest.java` with the updated version. It now parses JSON and asserts field values independently of their order.
-
-From PowerShell, run `Set-ExecutionPolicy -Scope Process Bypass -Force` (only for reviewed scripts, if needed), then `./scripts/run-demo.ps1`. Alternatively: `mvn -B -ntp -pl demo-app -am clean verify`.
-
-## Windows: annotation processor bootstrap build fix
-
-If `framework-processor` fails with
-`Provider dev.fastframe.processor.FastFrameProcessor not found`, update
-`framework-processor/pom.xml` to include `<proc>none</proc>` **only for this
-module**. This prevents javac from trying to load the uncompiled processor
-class from `META-INF/services` during its own compilation; processor discovery
-in `demo-app` and `benchmarks/fastframe-app` is unaffected.
-
-From the project root in PowerShell:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force
-.\scripts\run-demo.ps1
-```
-
-The script selects your configured JDK 21 without changing the system Java 8.
-For a build-only check:
-
-```powershell
-mvn -B -ntp -pl demo-app -am clean package
-```
-
-## New in v0.7.1: Windows development + benchmarking
-
-The Java framework and Netty server now come with **Windows PowerShell 5.1+/PowerShell 7** scripts. You can keep **Java 8 installed globally** and use JDK 21 only in the PowerShell session running FastFrame. No permanent PATH changes are made.
-
-On Windows (from the project root), after installing **Temurin JDK 21**, **Maven 3.9+**, and **Python 3.10+**:
-
-```powershell
-# Build + start the demo on localhost:8080
-.\scripts\run-demo.ps1
-# In another terminal:
-curl.exe http://localhost:8080/api/health
-```
-
-To compare FastFrame with Micronaut on Windows, install [hey](https://github.com/rakyll/hey) and run:
-
-```powershell
-# Build both servers, check HTTP endpoints, measure load (hey required)
-.\benchmarks\run.ps1 -Duration 20s -Warmup 5s -Concurrency 64 -Repeats 3
-# Or build and check separately:
-.\benchmarks\build.ps1
-.\benchmarks\preflight.ps1
-```
-
-See **[WINDOWS.md](WINDOWS.md)** for installation, PowerShell execution policy, `hey`, Java 8 coexistence, and Windows-specific troubleshooting. Results are saved in `benchmarks/results/<timestamp>/` as CSV/JSON. Windows process memory/CPU are read directly through WinAPI (working set + process times), without `psutil` or `/proc`.
-
-## New in v0.7: Lower-allocation HTTP request path
-
-This release changes the internal fast path without changing annotated controller syntax:
-
-- **Direct synchronous dispatch:** a controller registered with `Router.add`, `get`, `post`, etc. returns its `Response` to the Netty adapter without allocating a `CompletableFuture` or running a `whenComplete` callback. Async routes and middleware still use `CompletionStage<Response>` and retain timeouts.
-- **No needless timer scheduling:** synchronous responses and already-completed stages do not schedule an event-loop timeout. Truly pending async requests still get HTTP 504 and cooperative cancellation.
-- **Exact static routes:** an exact-match index avoids walking the trie and allocating a `Match` for fixed URL paths; parameterized routes still use the trie and static-route precedence is preserved.
-- **Less URI/body decoding:** a plain URL path skips `QueryStringDecoder`; empty HTTP bodies skip UTF-8 decoder allocation. Requests containing percent escapes or queries still use Netty's decoder, and nonempty request bodies still undergo strict UTF-8 validation.
-
-These are engineering changes, **not an established performance gain**. Re-run the benchmark from v0.6 and v0.7 on the same machine before drawing conclusions. Memory and p99 are at least as important as RPS. Full Netty/Micronaut Maven integration tests were not executed in the ZIP creation environment.
-
-## New in v0.6: Benchmark suite vs Micronaut
-
-Four comparable benchmark endpoints are provided by two **standalone** applications:
-`benchmarks/fastframe-app` and `benchmarks/micronaut-app`. The latter uses
-Micronaut Platform 4.10.21 (Core 4.10.31) and Micronaut Serde, while the former
-uses FastFrame on Netty 4.2.19.Final. Run:
+### Linux / macOS
 
 ```bash
-bash benchmarks/build.sh
-python3 benchmarks/run.py --duration 20s --warmup 5s --concurrency 64 --repeats 3
-python3 benchmarks/summarize.py benchmarks/results/<timestamp>/results.csv
+mvn -B -ntp -pl demo-app -am clean verify
+java -jar demo-app/target/demo-app-0.21.0-SNAPSHOT.jar
 ```
 
-The runner supports **Windows, Linux and macOS** and requires Java 21, Maven, Python 3.10+, and hey. It starts one server
-at a time, checks endpoint correctness, warms up, then captures RPS, latency,
-RSS, CPU and HTTP errors. **No actual Micronaut comparison figures have been
-measured in the ZIP creation environment.** Details and methodology:
-[`benchmarks/README.md`](benchmarks/README.md).
-
-On macOS, the benchmark uses BSD `ps` for process RSS and CPU time, instead of
-Linux `/proc`. Install prerequisites with `brew install maven hey` (and Java 21 if
-needed). Read [`benchmarks/README.md`](benchmarks/README.md) for details.
-
-For FastFrame benchmark routing and CSV parser smoke tests (no Maven required):
-
-```bash
-bash scripts/benchmark-smoke.sh
-```
-
-## Requirements
-
-- JDK 21+
-- Maven 3.9+
-
-## Build and run
-
-```bash
-mvn -pl demo-app -am clean verify
-mvn -pl demo-app -am package
-java -jar demo-app/target/demo-app-0.14.0-SNAPSHOT.jar
-```
-
-Without Maven, run the **Java-only** core/processor smoke test:
+For an optional Java-only smoke check (does **not** replace Maven/Netty integration tests):
 
 ```bash
 bash scripts/core-smoke.sh
 ```
 
-It compiles `framework-core`, `framework-processor` and demo classes directly with Java 21, generates `FastFrameRoutes` and checks routing, DI, JSON DTO binding, validation, error conditions and processor failures. **It does not compile or exercise Netty**. JUnit Netty tests and the full Maven build are provided for execution where Maven dependencies are available, but were not executed in the build environment used to produce this ZIP.
+## Write your first controller
 
-## JSON DTO example (new in v0.5)
+FastFrame's processor generates route registration and supported constructor injection during compilation.
 
 ```java
-// demo-app/.../dto/CreateUserRequest.java
-public record CreateUserRequest(
-    @Required @Size(min = 2, max = 80) String name,
-    @Required @Size(min = 5, max = 254) String email,
-    @Min(13) @Max(120) int age
-) {}
+package dev.fastframe.demo.controllers;
 
-// demo-app/.../controllers/UserController.java
-@Controller("/api/users")
-public final class UserController {
-    @Post
-    public Response store(@Body CreateUserRequest dto) {
-        return Response.jsonValue(Map.of(
-            "name", dto.name(), "email", dto.email(),
-            "age", dto.age(), "created", true
-        )).status(201);
+import dev.fastframe.core.annotation.Controller;
+import dev.fastframe.core.annotation.Get;
+import dev.fastframe.core.annotation.PathParam;
+import dev.fastframe.core.http.Response;
+import java.util.Map;
+
+@Controller("/api/hello")
+public final class HelloController {
+    @Get("/{name}")
+    public Response greet(@PathParam("name") String name) {
+        return Response.jsonValue(Map.of("message", "Hello " + name));
     }
 }
 ```
 
-The annotation processor generates direct calls equivalent to:
+Controller discovery happens **at compile time**. Rebuild after adding a controller so that the generated route registry includes it. Depending on your project setup, also ensure the processor has the expected module/classpath configuration. See the working [demo controller](demo-app/src/main/java/dev/fastframe/demo/controllers/UserController.java) for the current signatures and [CLI guide](CLI.md) for scaffolding.
 
-```java
-JsonBody json = JsonBody.parse(request);
-String name = json.string("name", true, 2, 80);
-String email = json.string("email", true, 5, 254);
-int age = java.util.Objects.requireNonNullElse(json.integer("age", true, 13L, 120L), 0);
-json.finish("name", "email", "age");
-CreateUserRequest dto = new CreateUserRequest(name, email, age);
-```
+The included demo also supports a DTO-backed POST endpoint:
 
-**No reflection on the DTO binding path.** Binding still creates an object tree (`Map`/`List`) for the parsed JSON and therefore has allocation overhead. This API is not yet a streaming zero-allocation JSON codec.
-
-### Example requests
-
-```bash
-curl -i http://localhost:8080/api/health
-curl -i -X POST http://localhost:8080/api/users \
-  -H 'Content-Type: application/json' \
+```powershell
+curl.exe -i -X POST http://127.0.0.1:8080/api/users `
+  -H "Content-Type: application/json" `
   -d '{"name":"Alice","email":"alice@example.org","age":27}'
-
-# Field-level validation: HTTP 422
-curl -i -X POST http://localhost:8080/api/users \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"A","email":5,"age":7}'
-
-# Invalid JSON syntax: HTTP 400
-curl -i -X POST http://localhost:8080/api/users \
-  -H 'Content-Type: application/json' -d '{"age":1,,}'
-
-# Unsupported content type: HTTP 415
-curl -i -X POST http://localhost:8080/api/users \
-  -H 'Content-Type: text/plain' -d '{}'
 ```
 
-Successful creation responds with `201` and JSON body containing the submitted DTO fields. Invalid data produces a JSON error object, for example:
+This uses `@Body CreateUserRequest` and the validation annotations shown in [the DTO source](demo-app/src/main/java/dev/fastframe/demo/dto/CreateUserRequest.java). Invalid JSON, unsupported content types, and validation errors have distinct status codes.
 
-```json
-{
-  "error": {
-    "code": "validation_failed",
-    "message": "Validation failed",
-    "fields": {
-      "name": ["length must be between 2 and 80"],
-      "email": ["must be a string"],
-      "age": ["must be between 13 and 120"]
-    }
-  }
-}
+### Asynchronous handlers
+
+HTTP handlers can return `CompletionStage<Response>`. Keep **blocking JDBC, disk or synchronous Redis work off Netty event-loop threads**, using appropriately bounded executors. Async cancellation is cooperative: it does not forcibly interrupt arbitrary blocking code.
+
+## CLI: Artisan-inspired workflow
+
+Generate scaffolding from the repository root:
+
+```powershell
+.\scripts\ff.ps1 make:controller Post
+.\scripts\ff.ps1 make:model Post
+.\scripts\ff.ps1 make:migration create_posts
+.\scripts\ff.ps1 make:service Payment
+.\scripts\ff.ps1 make:request CreatePayment
+.\scripts\ff.ps1 make:middleware Audit
+.\scripts\ff.ps1 make:job SendEmail
+.\scripts\ff.ps1 make:provider Billing
+.\scripts\ff.ps1 make:listener PaymentCreated
+.\scripts\ff.ps1 route:list
 ```
 
-Field ordering in error JSON is not guaranteed.
+The CLI refuses to silently overwrite existing files. `route:list` displays **generated annotated routes**, not every route installed programmatically via `Router`. On Linux/macOS use `bash scripts/ff.sh ...`. Full examples: [CLI.md](CLI.md).
 
-## DTO binding rules and constraints
-
-- `@Body` must annotate **at most one** controller argument; it must be a `public` top-level, non-generic Java `record`.
-- Allowed record component types: `String`, `int`, `Integer`, `long`, `Long`, `boolean`, `Boolean`. All primitive components are implicitly required.
-- `@Required` (non-null), `@Size(min, max)` (String UTF-16 length), `@Min(value)` and `@Max(value)` (integer range).
-- Missing nullable fields may map to `null`; primitives cannot. Unknown fields are **rejected** with HTTP 422 instead of silently ignored.
-- Valid `application/json` is required, optionally with `charset=utf-8`; other encodings/content types produce HTTP 415. JSON syntax errors, duplicate object keys, invalid surrogate pairs, non-object roots and excessive nesting produce HTTP 400.
-- Built-in limits in `JsonBody`: input <= 65,536 Java characters (in addition to Netty's byte limit), 32 nesting levels, 2,048 JSON values, maximum 64-character numeric tokens.
-- Netty's request payload limit is configurable and defaults to 65,536 **bytes**, aggregated before parsing; invalid UTF-8 sequences are rejected with HTTP 400.
-- The validator currently accumulates simple type/length/range issues; it does not validate email format or provide arbitrary custom validators.
-- `Response.jsonValue` still supports basic Java collections/primitives, **not automatic arbitrary record/POJO serialization**. The controller demonstrates `Map.of(...)` responses.
-
-## Framework architecture
+## Application architecture
 
 ```text
-framework-core/       Router, HTTP DTO bindings, validation, DI/HTTP annotations
-framework-processor/  Compile-time route/DI/DTO Java code generator
-framework-netty/      Netty transport, admission limits, deadlines, response/error mapping
- demo-app/            Annotated controller, CreateUserRequest, sample service
-scripts/              Java smoke and negative-compile tests (Maven-free)
-.github/workflows/    Full Maven/JUnit and smoke CI configuration
+fastframe/
+├── docs/assets/                # Project brand/logo assets
+├── framework-core/             # Routing contracts, Request/Response, annotations
+├── framework-processor/        # Compile-time routes / DI / DTO generation
+├── framework-netty/            # HTTP/1.1 transport and request pipeline
+├── framework-application/      # Service providers and bootstrap
+├── framework-events/           # Typed event bus
+├── framework-config/           # Environment and typed configuration
+├── framework-database/         # JDBC Query Builder
+├── framework-orm/              # Record models and generated mappers
+├── framework-migrations/       # Versioned SQL migration runner
+├── framework-auth/             # Authentication and authorization
+├── framework-security/         # CORS, rate limits, HTTP headers
+├── framework-cache*/           # In-memory cache and Redis adapter
+├── framework-queue*/           # Queue/scheduler and Redis adapter
+├── framework-storage*/         # Local and optional S3 storage
+├── framework-http-client/      # Async outbound HTTP client
+├── framework-observability/    # Request IDs, metrics, readiness
+├── framework-testing/          # Feature-test helpers
+├── framework-cli/              # Code generator and route listing
+├── demo-app/                   # Example controllers, providers and DB
+├── queue-demo/                 # Standalone worker/scheduler sample
+├── benchmarks/                 # FastFrame vs Micronaut test harness
+└── scripts/                    # PowerShell and shell entry points
 ```
 
-Async controllers use `CompletionStage<Response>`; middleware is registered before starting the server. Route registration constructs and shares singleton controllers, so they **must be thread-safe**. The Netty event loop must not execute blocking I/O: use nonblocking clients or a bounded worker executor. Async controller cancellation remains cooperative.
+The parent [`pom.xml`](pom.xml) is the source of truth for the Maven reactor and module versions. Redis, S3 and external data services remain opt-in dependencies.
 
-## Server configuration
+## Configuration
 
-| Environment variable | Default | Description |
-| --- | ---: | --- |
-| `PORT` | `8080` | TCP port |
-| `MAX_IN_FLIGHT` | `256` | Shared concurrent request limit (503 when exceeded) |
-| `MAX_PIPELINED` | `64` | Per-channel queued responses |
-| `MAX_REQUEST_BYTES` | `65536` | Max aggregated HTTP request bytes |
-| `REQUEST_TIMEOUT_MS` | `10000` | Async request timeout in milliseconds (504) |
+FastFrame reads configuration once at startup; **process environment variables override `.env`**. Start from [`.env.example`](.env.example). Important settings include:
 
-The in-flight semaphore does **not** cap open TCP connections, socket bytes, or overall memory. Request timeouts cannot interrupt blocking synchronous code. HTTP/1.1 pipelining retains response ordering.
+| Setting | Typical default | Purpose |
+| --- | --- | --- |
+| `FF_HOST` | `127.0.0.1` | Local-only server bind address |
+| `PORT` | `8080` | HTTP server port |
+| `MAX_IN_FLIGHT` | `256` | Concurrent active request admission limit |
+| `MAX_PIPELINED` | `64` | Per-connection pending response limit |
+| `MAX_REQUEST_BYTES` | `65536` | Max aggregated request body size |
+| `REQUEST_TIMEOUT_MS` | `10000` | Pending async request deadline |
+| `FF_DB_URL` | unset | JDBC connection string, optionally H2 locally |
+| `FF_ENABLE_METRICS` | `false` | Optional private `/_metrics` endpoint |
+| `FF_RATE_LIMIT_PER_MINUTE` | `0` | Local rate limiter (0 disables) |
+| `FF_CORS_ALLOWED_ORIGINS` | empty | Explicit permitted origins |
 
-## Git workflow
+**Never commit credentials or JWT keys.** If the repo is inside `C:\xampp\www`, store a private `.env` outside the web root:
 
-The ZIP is a clean source snapshot with no `.git` history.
-
-**New repository:**
-
-```bash
-git init
-git add .
-git commit -F COMMIT_MESSAGE.txt
+```powershell
+New-Item -ItemType Directory -Force C:\fastframe-private | Out-Null
+Copy-Item .\.env.example C:\fastframe-private\.env
+$env:FF_ENV_FILE = 'C:\fastframe-private\.env'
 ```
 
-**Existing FastFrame repository:** copy all ZIP contents over the existing project (leave `.git` unchanged), then run:
+Use the dedicated [CONFIG.md](CONFIG.md) and [SECURITY.md](SECURITY.md) to review secret handling and deployment constraints. The `FF_JWT_SECRET_B64` value must be generated securely; no default signing key is provided for production use.
+
+## Testing
+
+Basic full-build verification:
+
+```powershell
+mvn -B -ntp -pl demo-app -am clean verify
+.\scripts\testing-smoke.ps1
+.\scripts\security-smoke.ps1
+.\scripts\json-allocation.ps1
+```
+
+Feature tests can issue real HTTP requests against a local ephemeral Netty server and assert JSON values without relying on the order of JSON object fields. H2 fixtures and HTTP mocks are documented in [TESTING.md](TESTING.md). Use isolated test databases; never aim migrations or fixtures at production data.
+
+## Performance and benchmarks
+
+The repository contains a **separate** benchmark app for FastFrame and another for Micronaut with four matching routes: `plain`, `json`, `route`, `echo`.
+
+**Windows PowerShell** (Java 21, Maven, Python, [`hey`](https://github.com/rakyll/hey)):
+
+```powershell
+.\benchmarks\build.ps1
+.\benchmarks\preflight.ps1
+.\benchmarks\run.ps1 `
+  -SkipBuild -SkipPreflight `
+  -Duration 30s -Warmup 10s `
+  -Concurrency 64 -Repeats 5
+```
+
+To collect a Java Flight Recorder (JFR) trace:
+
+```powershell
+.\benchmarks\profile.ps1 -Framework fastframe -Case json -Concurrency 64 -Duration 30s
+```
+
+Metrics include requests/sec, latency percentiles, errors and process CPU/RSS. Compare multiple runs **on the same machine, OS, heap, concurrency and endpoint behavior**. v0.21 includes a UTF-8 JSON serialization optimization, but **no universal speedup, RAM advantage or Micronaut victory is claimed**. See [PERFORMANCE.md](PERFORMANCE.md) and [benchmark methodology](benchmarks/README.md).
+
+## Security, operations and current limitations
+
+- **HTTP/1.1 prototype**, not a hardened general-purpose edge server; terminate HTTPS at a trusted, properly configured reverse proxy.
+- Request IDs, liveness/readiness and optional metrics support local operational checks. Avoid exposing metrics publicly.
+- CORS is **not** authentication or CSRF protection. Local per-IP rate limits are **not** cluster-wide; behind a proxy they may see only the proxy's IP.
+- JWT, password storage, uploads, ORM, migrations, JSON parsing and Redis lease semantics need more independent hardening and integration tests before production.
+- Full end-to-end Windows/Maven/S3/Redis validation must be performed in your deployment environment; a Java smoke test alone is not sufficient.
+- Benchmark results from different systems (e.g. macOS vs Windows) cannot be directly interpreted as framework-only differences.
+
+Read [SECURITY.md](SECURITY.md) and [PRODUCTION.md](PRODUCTION.md) before any public deployment.
+
+## Documentation
+
+| Topic | Guide |
+| --- | --- |
+| Windows installation and troubleshooting | [WINDOWS.md](WINDOWS.md) |
+| CLI generators and annotated routes | [CLI.md](CLI.md) |
+| `.env` and application config | [CONFIG.md](CONFIG.md) |
+| Database / ORM / migrations | [DATABASE.md](DATABASE.md), [ORM_MIGRATIONS.md](ORM_MIGRATIONS.md) |
+| JWT and route authorization | [AUTHORIZATION.md](AUTHORIZATION.md) |
+| Cache and Redis | [CACHE.md](CACHE.md) |
+| Background workers and scheduling | [QUEUE_SCHEDULER.md](QUEUE_SCHEDULER.md) |
+| Service providers and events | [BOOTSTRAP_EVENTS.md](BOOTSTRAP_EVENTS.md) |
+| Storage and outgoing HTTP | [STORAGE_HTTP.md](STORAGE_HTTP.md) |
+| HTTP testing | [TESTING.md](TESTING.md) |
+| Request IDs / metrics / lifecycle | [OBSERVABILITY.md](OBSERVABILITY.md) |
+| HTTP security and deployment | [SECURITY.md](SECURITY.md), [PRODUCTION.md](PRODUCTION.md) |
+| Performance profiling and comparisons | [PERFORMANCE.md](PERFORMANCE.md), [benchmarks/README.md](benchmarks/README.md) |
+| Version history | [CHANGELOG.md](CHANGELOG.md) |
+| Project logo assets | [docs/assets/BRANDING.md](docs/assets/BRANDING.md) |
+
+Some topic guides were introduced in earlier snapshot versions; **the root `pom.xml` and current source take precedence for versions and runnable JAR filenames**.
+
+## Contributing and versioning
+
+This ZIP is a **source snapshot** with no `.git` history. For an existing repository, preserve `.git`, review the diff and run tests before committing:
 
 ```bash
 git status
-git add .
+git add README.md docs/assets CHANGELOG.md COMMIT_MESSAGE.txt
 git commit -F COMMIT_MESSAGE.txt
 ```
 
-## Next milestone — v0.8
+Before releasing publicly, select and add a `LICENSE` file, publish contribution and code-of-conduct policies, and document a stable support/security process. **v0.21 is not a stable 1.0 API.**
 
-Prioritize full macOS/Linux Maven integration tests, JFR allocated-bytes/request profiling, and a concurrency matrix (16/64/128/256) against Micronaut before pursuing more low-level Netty changes. Do not claim FastFrame is faster or uses less RAM until identical-load benchmarks with warmup, p99 latency, RPS, alloc/op and RSS are recorded.
+---
 
-
-## v0.11 Authentication
-See [AUTHORIZATION.md](AUTHORIZATION.md) for Windows setup, HS256 bearer tokens, annotations, policy checks and security limitations. Run `scripts/auth-smoke.ps1` then `scripts/run-demo.ps1` on Windows.
-
-
-## FastFrame v0.13: Queues & Scheduler
-
-Includes `framework-queue`, optional `framework-queue-redis`, and standalone `queue-demo`.
-See [QUEUE_SCHEDULER.md](QUEUE_SCHEDULER.md) for Windows Java 21 commands, retry and lease semantics.
-
-```java
-jobs.dispatch("mail.welcome", "user:42").delay(Duration.ofSeconds(10)).maxAttempts(3).enqueue();
-```
-
-## v0.20 — Security Hardening
-
-Added `framework-security` with exact-origin CORS allowlist, per-IP in-memory rate limiting, optional HSTS and default security response headers. See [SECURITY.md](SECURITY.md) and [PRODUCTION.md](PRODUCTION.md).
-
-Windows: `./scripts/security-smoke.ps1` in PowerShell; build and launch through `./scripts/run-demo.ps1`. JWT and protected routes remain as in v0.19. CORS does **not** replace authentication/CSRF controls; the local limiter is not cluster-wide.
+<div align="center">
+  <strong>FastFrame</strong> · Build faster. Go further.
+</div>
