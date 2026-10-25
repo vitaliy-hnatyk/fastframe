@@ -1,3 +1,94 @@
+## v0.21 performance validation
+
+Use `scripts/json-allocation.ps1` to measure allocations and `benchmarks/profile.ps1` for JFR recordings of FastFrame or Micronaut. To collect error-free HTTP RPS/p99/RSS measurements use `benchmarks/run.ps1`. Full commands and interpretation: [PERFORMANCE.md](PERFORMANCE.md). Existing JDK 21 selector still prefers `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` while leaving Java 8 as the global default.
+
+## FastFrame v0.19 — Windows operations smoke
+
+The existing `scripts/windows-env.ps1` selects Java 21 (including `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` when present), without changing system Java 8.
+
+```powershell
+cd C:\xampp\www\fastframe
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\observability-smoke.ps1
+.\scripts\run-demo.ps1
+```
+
+In a second terminal, use `curl.exe -i http://127.0.0.1:8080/_health/ready`. Refer to [OBSERVABILITY.md](OBSERVABILITY.md) to enable metrics only on localhost.
+
+---
+
+## FastFrame v0.19 tests
+
+```powershell
+cd C:\xampp\www\fastframe
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\testing-smoke.ps1
+```
+
+See [TESTING.md](TESTING.md). No global Java 8 changes.
+
+---
+
+## FastFrame v0.16 — Windows configuration and CLI
+
+Run `.\scripts\config-smoke.ps1` and `.\scripts\cli-smoke.ps1` before launching the demo. Use `.\scripts\ff.ps1 make:service Invoice`, `make:request CreateInvoice`, `make:middleware Audit` or `make:job SendInvoice`. Java 21 is selected per PowerShell process; global Java 8 stays intact.
+
+**XAMPP security:** because your checkout is inside `C:\xampp\www`, store the private environment file outside that directory:
+
+```powershell
+New-Item -ItemType Directory -Force 'C:\fastframe-private' | Out-Null
+Copy-Item .\.env.example 'C:\fastframe-private\.env'
+$env:FF_ENV_FILE = 'C:\fastframe-private\.env'
+.\scripts\run-demo.ps1
+```
+
+See [CONFIG.md](CONFIG.md) for examples and override order. Do not expose the development server publicly or commit credentials.
+
+---
+
+## FastFrame v0.15 CLI for Windows
+
+Use `scripts/ff.ps1` to generate controllers, models, migrations and list annotated routes. No need to uninstall Java 8. The script selects your installed Temurin JDK 21. See [CLI.md](CLI.md) for command examples and limitations.
+
+# FastFrame v0.14 — Windows notes
+
+Run the storage and HTTP client test suite on your existing Java 21 installation:
+
+```powershell
+cd C:\xampp\www\fastframe
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\storage-smoke.ps1
+.\scripts\run-demo.ps1
+```
+
+The JDK selector prefers `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` and does not change the global Java 8 installation. See [STORAGE_HTTP.md](STORAGE_HTTP.md) for opt-in localhost binary upload demo, S3 configuration and HTTP client examples.
+
+---
+
+## v0.10 Windows ORM and migrations
+
+Java 8 stays installed; `scripts/run-demo.ps1`, `scripts/migrate.ps1` and `scripts/orm-smoke.ps1` select the configured Temurin JDK 21 per session. Refer to [ORM_MIGRATIONS.md](ORM_MIGRATIONS.md).
+
+```powershell
+$env:FF_DB_URL='jdbc:h2:mem:fastframe;DB_CLOSE_DELAY=-1'
+.\scripts\run-demo.ps1
+# In a second terminal:
+curl.exe http://localhost:8080/api/db/users
+```
+
+For DB migrations on a persistent JDBC database, configure `FF_DB_URL` and run `.\scripts\migrate.ps1`. Do not automatically migrate production databases during HTTP startup.
+
+# Database demo (v0.9)
+
+```powershell
+$env:FF_DB_URL = 'jdbc:h2:mem:fastframe;DB_CLOSE_DELAY=-1'
+.\scripts\run-demo.ps1
+# In another PowerShell:
+curl.exe http://localhost:8080/api/db/users
+```
+
+The demo uses JDK 21 in the current PowerShell process. Your machine-wide JDK 8 remains unchanged. See [DATABASE.md](DATABASE.md).
+
 # FastFrame v0.7.1 — Windows setup (Java 8 + Java 21)
 
 These instructions are for **Windows 10/11**, PowerShell 5.1 or PowerShell 7, and the `fastframe-v0.7.1` folder containing `pom.xml`. **JDK 21 is required to build and run FastFrame.** Your other applications can continue using JDK 8.
@@ -102,3 +193,29 @@ python benchmarks/summarize.py benchmarks/results/20261024T123000Z/results.csv
 - **Windows ARM64**: use the appropriate JDK build, Maven and Go/hey for your architecture. The code is not yet validated on ARM64 hardware.
 
 This is still an experimental HTTP framework, not production-hardened software.
+
+
+## FastFrame v0.13: Queues
+
+Run `.\scripts\queue-smoke.ps1` for local tests. For Redis jobs configure `FF_REDIS_URI`, then start `.\scripts\run-queue.ps1 -Command worker` and `.\scripts\run-queue.ps1 -Command scheduler` in separate terminals. Full instructions: `QUEUE_SCHEDULER.md`.
+
+
+## v0.17 bootstrap / events
+
+Run `.\scripts\bootstrap-smoke.ps1`, and see [BOOTSTRAP_EVENTS.md](BOOTSTRAP_EVENTS.md).
+
+
+## v0.20 HTTP security (Windows)
+
+`./scripts/security-smoke.ps1` runs the Maven tests for `framework-security` and `framework-netty` with JDK 21.
+
+Example before starting demo:
+
+```powershell
+$env:FF_CORS_ALLOWED_ORIGINS = 'http://localhost:3000'
+$env:FF_RATE_LIMIT_PER_MINUTE = '120'
+$env:FF_HSTS = 'false'
+./scripts/run-demo.ps1
+```
+
+For live Windows deployments, move the checkout out of `C:\xampp\www` and see `PRODUCTION.md`. The limiter keys on Netty socket IP (likely Apache's IP behind XAMPP), not `X-Forwarded-For`.

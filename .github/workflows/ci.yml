@@ -5,6 +5,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -14,6 +19,52 @@ jobs:
           cache: maven
       - name: Compile and run tests
         run: mvn -B -ntp -pl demo-app -am clean verify
+      - name: JSON UTF-8 parity JUnit regressions
+        run: mvn -B -ntp -pl framework-core -am test
+      - name: Benchmark Python regressions
+        run: python3 -m unittest discover -s benchmarks/tests
+      - name: HTTP security smoke (no external deps)
+        run: bash scripts/security-smoke.sh
+      - name: CORS and rate limiting JUnit / Netty tests
+        run: mvn -B -ntp -pl framework-security,framework-netty -am test
+      - name: Observability Java smoke
+        run: bash scripts/observability-smoke.sh
+      - name: Metrics, graceful shutdown, and Netty HTTP tests
+        run: mvn -B -ntp -pl framework-observability,framework-netty -am test
+      - name: Feature testing over Netty and test fixture JUnit
+        run: mvn -B -ntp -pl framework-testing,demo-app -am test
+      - name: Bootstrap and events smoke
+        run: bash scripts/bootstrap-smoke.sh
+      - name: App lifecycle and events JUnit tests
+        run: mvn -B -ntp -pl framework-application,framework-events -am test
+      - name: CLI generator + compile-time route manifest smoke
+        run: bash scripts/cli-smoke.sh
+      - name: CLI JUnit tests
+        run: mvn -B -ntp -pl framework-cli -am test
+      - name: Storage and HTTP client smoke (JDK local server)
+        run: bash scripts/storage-smoke.sh
+      - name: File storage and HTTP client Maven tests
+        run: mvn -B -ntp -pl framework-storage,framework-storage-s3,framework-http-client -am test
+      - name: Cache TTL/LRU and memory smoke
+        run: bash scripts/cache-smoke.sh
+      - name: Cache unit tests and Redis adapter compilation
+        run: mvn -B -ntp -pl framework-cache,framework-cache-redis -am test
+      - name: Queue core, retries and cron smoke
+        run: bash scripts/queue-smoke.sh
+      - name: Queue and Redis adapter Maven tests
+        run: mvn -B -ntp -pl framework-queue,framework-queue-redis,queue-demo -am test
+      - name: Redis integration: atomic leases and redelivery
+        env:
+          FF_TEST_REDIS_URI: redis://127.0.0.1:6379
+        run: mvn -B -ntp -pl framework-queue-redis -am test
+      - name: Authentication and policy tests
+        run: mvn -B -ntp -pl framework-auth -am test
+      - name: Compile-time ORM mapper smoke
+        run: bash scripts/orm-smoke.sh
+      - name: ORM repositories and migration integration tests (H2)
+        run: mvn -B -ntp -pl framework-orm,framework-migrations -am test
+      - name: JDBC Query Builder tests (H2)
+        run: mvn -B -ntp -pl framework-database -am test
       - name: Processor smoke and negative tests
         run: bash scripts/core-smoke.sh
       - name: Benchmark source smoke tests (no external load)
@@ -49,6 +100,42 @@ jobs:
           python-version: '3.11'
       - name: Run Windows backend and CSV unit tests
         run: python -m unittest discover -s benchmarks/tests -v
+      - name: Windows CLI generators and JUnit tests
+        shell: pwsh
+        run: ./scripts/cli-smoke.ps1
+      - name: Windows security tests
+        shell: pwsh
+        run: ./scripts/security-smoke.ps1
+      - name: Windows Netty observability integration tests
+        shell: pwsh
+        run: ./scripts/observability-smoke.ps1
+      - name: Windows feature tests (real loopback HTTP, H2, mock HTTP)
+        shell: pwsh
+        run: ./scripts/testing-smoke.ps1
+      - name: Windows bootstrap/events Maven tests
+        shell: pwsh
+        run: ./scripts/bootstrap-smoke.ps1
+      - name: Windows Storage and HTTP client tests
+        shell: pwsh
+        run: ./scripts/storage-smoke.ps1
+      - name: Windows cache and Redis adapter tests
+        shell: pwsh
+        run: mvn -B -ntp -pl framework-cache,framework-cache-redis -am test
+      - name: Windows queue and optional Redis adapter tests
+        shell: pwsh
+        run: ./scripts/queue-smoke.ps1
+      - name: Windows auth unit tests
+        shell: pwsh
+        run: mvn -B -ntp -pl framework-auth -am test
+      - name: Windows ORM generation smoke
+        shell: pwsh
+        run: ./scripts/orm-smoke.ps1
+      - name: Windows ORM and migrations tests
+        shell: pwsh
+        run: mvn -B -ntp -pl framework-orm,framework-migrations -am test
+      - name: Windows JDBC Query Builder tests
+        shell: pwsh
+        run: mvn -B -ntp -pl framework-database -am test
       - name: Build both benchmark servers using PowerShell
         shell: pwsh
         run: ./benchmarks/build.ps1

@@ -36,7 +36,7 @@ Or test the module in isolation (requires JDK 21 and Maven):
 
 ```powershell
 mvn -B -ntp -pl framework-processor -am clean package
-jar tf .\framework-processor\target\framework-processor-0.7.1-SNAPSHOT.jar | Select-String 'META-INF/services/javax.annotation.processing.Processor'
+jar tf .\framework-processor\target\framework-processor-0.9.0-SNAPSHOT.jar | Select-String 'META-INF/services/javax.annotation.processing.Processor'
 mvn -B -ntp -pl demo-app -am clean package
 ```
 

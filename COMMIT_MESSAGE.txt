@@ -1,4 +1,7 @@
-test(demo): ignore JSON object key order in generated routes test
+perf(json): emit UTF-8 directly and add JFR benchmark tooling
 
-Parse response JSON and assert typed id/name fields. Preserve unknown-field
-validation and retain Windows annotation processor bootstrap fix.
+- avoid intermediate JSON String and second UTF-8 encoding
+- reduce Netty content-type and CORS response allocations
+- track benchmark JAR versions from Maven coordinates
+- add Windows JFR profile, allocation probe and median comparison
+- test Unicode JSON parity and benchmark tooling

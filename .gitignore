@@ -20,3 +20,19 @@ Thumbs.db
 benchmarks/results/
 **/__pycache__/
 *.pyc
+
+# Local private storage demo files
+.fastframe-files/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local files copied into XAMPP docroot must never be publicly served.
+*.env.local
+
+# JFR recordings and profiling logs
+benchmarks/jfr/
+*.jfr

@@ -48,6 +48,25 @@ public final class JsonBody {
         }
     }
 
+    /** Strict, bounded JSON object decoding reused for signed JWT claims. */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> parseObject(String json) {
+        if (json == null || json.isBlank() || json.length() > MAX_BODY_CHARS) {
+            throw new IllegalArgumentException("Invalid JSON length");
+        }
+        Object value = new Parser(json).parse();
+        if (!(value instanceof Map<?, ?>)) throw new IllegalArgumentException("Expected JSON object");
+        return (Map<String, Object>) value;
+    }
+
+    /** Test/support JSON parsing for objects, arrays and scalars using existing limits. */
+    public static Object parseValue(String json) {
+        if (json == null || json.isBlank() || json.length() > MAX_BODY_CHARS) {
+            throw new IllegalArgumentException("Invalid JSON length");
+        }
+        return new Parser(json).parse();
+    }
+
     /** Nullable string unless @Required; invalid values accumulate for HTTP 422. */
     public String string(String field, boolean required, int min, int max) {
         Object value = fields.get(field);

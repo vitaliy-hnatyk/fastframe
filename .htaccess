@@ -1,0 +1,6 @@
+# Defense in depth for projects extracted under an Apache web document root.
+# This only works if AllowOverride permits .htaccess; the recommended solution
+# is to keep the FastFrame project and .env OUTSIDE the public document root.
+<FilesMatch "^(\.env(\..*)?|\.git|\.htaccess)$">
+    Require all denied
+</FilesMatch>

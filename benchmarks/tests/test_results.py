@@ -9,10 +9,15 @@ from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from run import csv_statistics, percentile, parse_ps_cpu_time, ps_metrics, windows_metrics, metrics_backend, process_metrics, run_load
+from run import csv_statistics, percentile, parse_ps_cpu_time, ps_metrics, windows_metrics, metrics_backend, process_metrics, run_load, benchmark_jars
 
 
 class ResultsTest(unittest.TestCase):
+    def test_benchmark_jars_track_pom_versions(self):
+        jars = benchmark_jars()
+        self.assertEqual(jars['fastframe'].name, 'benchmark-fastframe-0.21.0-SNAPSHOT.jar')
+        self.assertEqual(jars['micronaut'].name, 'benchmark-micronaut-0.9.0.jar')
+
     def test_percentile_interpolation(self):
         self.assertEqual(percentile([1.0, 2.0, 3.0, 4.0, 5.0], .95), 4.8)
         self.assertEqual(percentile([2.0], .99), 2.0)

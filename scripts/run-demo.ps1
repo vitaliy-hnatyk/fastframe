@@ -20,7 +20,7 @@ try {
     if (-not $SkipBuild) {
         Invoke-FastFrameMaven -Parameters @('-B', '-ntp', '-pl', 'demo-app', '-am', 'clean', 'package')
     }
-    $jar = Join-Path $root 'demo-app\target\demo-app-0.7.1-SNAPSHOT.jar'
+    $jar = Join-Path $root 'demo-app\target\demo-app-0.21.0-SNAPSHOT.jar'
     if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
         throw "Missing $jar. Build it without -SkipBuild first."
     }

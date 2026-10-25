@@ -1,4 +1,4 @@
-# FastFrame v0.7.1 — HTTP benchmark suite
+# FastFrame v0.21 — HTTP benchmark suite
 
 This directory contains **two intentionally minimal standalone HTTP/1.1 servers** with corresponding endpoints:
 
@@ -119,7 +119,7 @@ python3 benchmarks/run.py --duration 3s --warmup 2s --repeats 1 --cases plain ro
 - On macOS, RSS comes from `ps -o rss=` (KiB) and CPU time from `ps -o time=`. Both are sampled, and macOS RSS measurements may differ from Linux due to OS memory-accounting differences; compare frameworks within one host/OS only.
 - The generator on the same machine can become CPU-limited. Serious comparisons should use a separate load-generator host on a controlled network and fixed CPU affinity/host tuning.
 - JSON endpoints are not identical serialization implementations. Tests compare semantics, not allocation patterns or feature-completeness of the two frameworks.
-- v0.7.1 does **not** implement JFR / JMH allocation profiling; profiling is a separate next step and must target comparable application workloads.
+- v0.21 adds a Windows JFR profiling script and allocation diagnostic. These are diagnostics, not replacements for end-to-end testing or statistically sound microbenchmarking. See `../PERFORMANCE.md`.
 - Do not claim FastFrame is faster unless repeated, error-free measurements support it. Publish individual run data and both JVM/application configurations.
 
 ## Local smoke tests without Maven
@@ -142,3 +142,14 @@ python3 benchmarks/run.py --duration 30s --warmup 10s --concurrency 256 --repeat
 ```
 
 Do not interpret a small change in RPS as a framework speedup unless the effect exceeds run-to-run noise. The `hey` client can itself become the bottleneck at high concurrency.
+
+## v0.21 — Windows JFR and cross-version comparison
+
+`benchmarks/run.py` reads the FastFrame and Micronaut Maven POM files to resolve the correct artifact filenames. Build with `benchmarks/build.ps1` (Windows) or `benchmarks/build.sh` (Linux/macOS) first.
+
+```powershell
+.\benchmarks\profile.ps1 -Framework fastframe -Case json -Concurrency 64 -Duration 30s
+python benchmarks/compare_versions.py --baseline C:\benchmarks\v020\results.csv --candidate C:\benchmarks\v021\results.csv
+```
+
+No artificial RPS numbers are produced by these scripts.

@@ -1,3 +1,130 @@
+## v0.21.0 — Performance & Memory (experimental)
+
+- Add direct bounded UTF-8 encoding (`Json.utf8`) and remove temporary JSON strings from `Response.jsonValue`.
+- Preserve JSON escaping, nesting, cyclic-input rejection and existing APIs; add Unicode parity and error JUnit tests.
+- Optimize Netty binary media type checks and CORS controlled-header processing without changing policy.
+- Fix benchmark artifact version resolution using Maven POM metadata instead of stale `0.9.0` FastFrame JAR name.
+- Add Windows JFR profiling script, JSON allocation probe, CSV median comparison tool and regression tests.
+- Retain Windows JDK 21 selection (without changing global Java 8).
+- Measured only one microdiagnostic locally, not a network throughput gain; see `PERFORMANCE.md`.
+
+# FastFrame v0.20.0 — HTTP Security
+
+- New `framework-security` module: exact-origin CORS, bounded process-local per-IP rate limiting.
+- Integrated Netty response security headers and CORS preflight. Returns 403 and 429/Retry-After.
+- Windows config: `FF_CORS_ALLOWED_ORIGINS`, `FF_RATE_LIMIT_PER_MINUTE`, `FF_HSTS`.
+- Added `SECURITY.md`, `PRODUCTION.md`, Maven/JUnit tests and `security-smoke.ps1`.
+- GitHub dependency review and Dependabot configuration.
+- Experimental: full Netty/Maven integration and production security audit remain necessary.
+
+---
+
+## v0.19.0-SNAPSHOT — Operations / Production Hardening (2026-10-25)
+
+- Add lightweight `framework-observability`: bounded HTTP counters and latency histogram, readiness and optional metrics route.
+- Add server-owned `X-Request-ID` and async-safe `Request.requestId()`; do not reuse incoming IDs.
+- Add optional JUL access log message with no raw URL, body or auth token.
+- Add `NettyServer.shutdownGracefully(Duration)` draining accepted work, with bounded force-close fallback.
+- Add Windows smoke script, JUnit tests and Java-only smoke for metrics; preserve Windows JDK 21 selection.
+- Disable metrics by default and reject non-loopback metrics bind in demo; OpenTelemetry/exporters deferred.
+- **Test status:** Java-only smoke and previous regression checks passed; Netty/Maven integration pending.
+
+## 0.19.0-SNAPSHOT — HTTP Feature Testing
+
+- New optional test-scoped `framework-testing` module.
+- Ephemeral-loopback real Netty HTTP client with fluent JSON/status/header assertions.
+- Bearer-auth feature tests, isolated H2 fixtures, typed record factories, outbound HTTP mock.
+- Added generalized strict JSON value parser for test assertions (existing bounds preserved).
+- New Windows and Unix feature smoke scripts and cross-platform CI coverage.
+
+# FastFrame v0.17.0
+
+- Add provider registration/bootstrap lifecycle with managed teardown (`framework-application`).
+- Add typed synchronous/asynchronous event subscriptions (`framework-events`).
+- Add `make:provider` / `make:listener` CLI templates.
+- Demo initializes an application context and publishes a startup event.
+- Windows/bootstrap smoke tests and CI checks.
+- Existing framework modules remain opt-in.
+
+# v0.16.0 — Laravel-style generators and .env config
+
+- Add `framework-config` with bounded UTF-8 `.env` parsing, immutable configuration, typed getters, and process environment priority.
+- Support `FF_ENV_FILE` for storing secrets outside Windows XAMPP document roots; `.env` gitignored and `.env.example` provided.
+- Demo HTTP server reads its existing port, database, JWT, timeouts and storage flags through `Config`; no breaking change to environment variables.
+- Add `make:service`, `make:request`, `make:middleware`, `make:job` to the standalone Java CLI.
+- Generated types implement FastFrame's existing annotation / middleware / queue APIs and are never overwritten.
+- Add JUnit checks, Linux/Java 21 smoke tests, PowerShell smoke scripts, Git metadata and Windows documentation.
+- No runtime reflection added to HTTP routing; existing v0.15 modules retained.
+- **Not run:** full Maven build, Netty integration or native Windows test (require external Maven dependencies and Windows).
+
+---
+
+# v0.15.0 — Artisan-like CLI
+
+- New standalone `framework-cli` with generated controllers, ORM record models and versioned SQL migrations.
+- `route:list` reads a compact route manifest emitted at compilation by `FastFrameProcessor` (annotated routes only).
+- Windows `scripts/ff.ps1` / `scripts/cli-smoke.ps1`, Unix `scripts/ff.sh` / `scripts/cli-smoke.sh`.
+- Input validation, safe file creation (`CREATE_NEW`), no overwrites, no runtime controller scanning.
+- New JUnit tests and CI smoke coverage; prior modules and Windows JDK 21 auto-detection retained.
+
+---
+
+# Changelog
+
+## 0.14.0-SNAPSHOT — File Storage and Async HTTP Client
+
+- Add `framework-storage`: bounded `Storage` API and `LocalDiskStorage` with portable path validation, symlink checks, atomic replace when supported, size limits, and binary file CRUD.
+- Add optional `framework-storage-s3` backed by AWS SDK v2; credentials come from the caller's SDK client configuration. Storage remains opt-in.
+- Add `framework-http-client` wrapping Java 21 `sendAsync`: GET, JSON POST, per-request timeouts, no automatic redirects, bounded response consumption.
+- Add binary `Request.bodyBytes()` and `Response.bytes(...)` without changing JSON DTO handling. `application/octet-stream` is not decoded as UTF-8.
+- Add opt-in token-protected, loopback-only storage demo routes plus Windows `storage-smoke.ps1`, tests and updated CI.
+- Preserve prior JWT, Redis, Queue, ORM, migrations, Windows JDK 21 configuration and annotation processor hotfixes.
+- **Not validated**: full Maven/Netty/S3 integration and native Windows execution in the artifact-generation environment.
+
+
+## 0.13.0-SNAPSHOT — Background jobs and scheduling
+- `framework-queue`: durable-API job envelopes, typed handler registry, retries/backoff, failed-job records, bounded in-memory queue and visibility leases.
+- `framework-queue-redis`: optional Lettuce Redis adapter with atomic Lua claims, delayed jobs and stale-token fencing.
+- Cron-based `JobScheduler`, process-local minute deduplication, independent worker and scheduler CLI (`queue-demo`).
+- Windows PowerShell scripts, `/api/jobs/demo`, Queue smoke tests and optional Redis integration test.
+- Experimental queue APIs; not production-ready; see `QUEUE_SCHEDULER.md`.
+
+# Changelog
+
+## v0.12.0 — Cache & Redis
+
+- Add dependency-free `framework-cache` with bounded in-memory LRU, monotonic TTL and atomic `add`.
+- Add `Cache` Laravel-style facade (`get`, `has`, `put`, `forever`, `add`, `forget`, `remember`, `rememberForever`).
+- Add worker-executor `rememberAsync` for explicitly offloading blocking operations from Netty event loops.
+- Add optional Lettuce-based Redis store with namespaced keys, TTL and atomic Redis `SET NX PX`.
+- Add JUnit TTL, concurrency, LRU tests; opt-in Redis integration tests; Windows cache smoke script; CI coverage.
+- Preserve Java 21 Windows setup, compile-time processor bootstrap fix, ORM, auth and benchmarks.
+- Security: no arbitrary object deserialization; never issue FLUSHDB on shared Redis.
+
+# FastFrame Changelog
+
+## 0.11.0 – Auth & Authorization
+- JWT HS256 bearer authentication with explicit issuer/audience/time claim validation and >=256-bit secret
+- Compile-time secured routes with @Authenticated and @Authorize
+- PBKDF2 password hashing, per-request identities, role/permission and resource policies
+- Protected demo routes, JUnit and Windows smoke commands
+
+
+## 0.10.0 — Typed ORM + migrations
+
+- Added `framework-orm`: `Repository<T, ID>`, typed find/findOrFail, CRUD and transaction-scoped repositories.
+- Added Java-record annotations `@Table`, `@Id`, `@Column` and generated `*FastFrameMapper` code (no reflective per-request mapping).
+- Added `framework-migrations`: versioned `V001__*.sql` migrations, SHA-256 validation, migration history, explicit CLI.
+- Added `scripts/migrate.ps1`, `scripts/migrate.sh`, `scripts/orm-smoke.ps1` and H2 demo integration.
+- Included Windows/macOS/Linux benchmark and build scripts from v0.9 unchanged.
+- Known limits: blocking JDBC worker-only; explicit IDs; one SQL statement per migration; no DOWN migrations or migration locks; no performance claims.
+
+## v0.9.0 — Database Query Builder
+- Add optional JDBC module: safe identifiers, prepared values, select/where/whereIn, get/first/count/exists, filtered CRUD, transactions.
+- Add H2 integration tests and optional Windows demo endpoint with worker-thread offload.
+- Preserve annotation processor bootstrap and JSON-order test fixes from v0.7.1.
+- Keep original HTTP benchmark endpoints unchanged; no database benchmark claims.
+
 # Changelog
 
 ## 0.7.1 — Windows JSON test correction

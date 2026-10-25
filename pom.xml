@@ -5,13 +5,32 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>dev.fastframe</groupId>
     <artifactId>fastframe-parent</artifactId>
-    <version>0.7.1-SNAPSHOT</version>
+    <version>0.21.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
         <module>framework-core</module>
+        <module>framework-observability</module>
+        <module>framework-security</module>
         <module>framework-netty</module>
+        <module>framework-auth</module>
+        <module>framework-cache</module>
+        <module>framework-cache-redis</module>
+        <module>framework-storage</module>
+        <module>framework-storage-s3</module>
+        <module>framework-http-client</module>
+        <module>framework-queue</module>
+        <module>framework-queue-redis</module>
+        <module>queue-demo</module>
+        <module>framework-database</module>
+        <module>framework-orm</module>
+        <module>framework-migrations</module>
         <module>framework-processor</module>
+        <module>framework-config</module>
+        <module>framework-events</module>
+        <module>framework-application</module>
+        <module>framework-cli</module>
+        <module>framework-testing</module>
         <module>demo-app</module>
         <module>benchmarks/fastframe-app</module>
     </modules>

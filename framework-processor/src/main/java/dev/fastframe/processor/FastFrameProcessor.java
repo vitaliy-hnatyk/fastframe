@@ -6,6 +6,8 @@ import dev.fastframe.core.annotation.Size;
 import dev.fastframe.core.annotation.Min;
 import dev.fastframe.core.annotation.Max;
 import dev.fastframe.core.annotation.Controller;
+import dev.fastframe.core.annotation.Authenticated;
+import dev.fastframe.core.annotation.Authorize;
 import dev.fastframe.core.annotation.Delete;
 import dev.fastframe.core.annotation.Get;
 import dev.fastframe.core.annotation.Inject;
@@ -35,6 +37,8 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.tools.Diagnostic;
 import javax.tools.JavaFileObject;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
 import java.io.IOException;
 import java.io.Writer;
 import java.util.ArrayList;
@@ -80,6 +84,7 @@ public final class FastFrameProcessor extends AbstractProcessor {
         if (invalid) return true;
         try {
             writeRoutes(initialized, routes);
+            writeRouteManifest(routes);
         } catch (IOException ex) {
             fail(null, "Failed generating " + GENERATED + ": " + ex.getMessage());
         }
@@ -168,6 +173,14 @@ public final class FastFrameProcessor extends AbstractProcessor {
                 }
                 String fullPath = join(controller.value(), path, method);
                 if (fullPath == null) continue;
+                Authorize methodGrant = method.getAnnotation(Authorize.class);
+                Authorize classGrant = bean.type.getAnnotation(Authorize.class);
+                String grant = methodGrant != null ? methodGrant.value() : (classGrant != null ? classGrant.value() : null);
+                if (grant != null && (grant.isBlank() || grant.length() > 128)) {
+                    fail(method, "@Authorize permission must be 1..128 characters"); continue;
+                }
+                boolean secured = grant != null || method.getAnnotation(Authenticated.class) != null
+                        || bean.type.getAnnotation(Authenticated.class) != null;
                 boolean async = validateReturnType(method);
                 if (invalid) continue;
                 List<String> bindings = new ArrayList<>();
@@ -180,7 +193,7 @@ public final class FastFrameProcessor extends AbstractProcessor {
                 String key = verb + " " + fullPath;
                 ExecutableElement previous = seen.putIfAbsent(key, method);
                 if (previous != null) fail(method, "Duplicate annotated route " + key);
-                result.add(new Route(verb, fullPath, bean, method, async, bindings));
+                result.add(new Route(verb, fullPath, bean, method, async, bindings, secured, grant));
             }
         }
         result.sort(Comparator.comparing((Route r) -> r.verb).thenComparing(r -> r.path));
@@ -350,6 +363,12 @@ public final class FastFrameProcessor extends AbstractProcessor {
             for (Route r : routes) {
                 boolean hasBoundValues = r.arguments.stream().anyMatch(a -> !a.equals("request"));
                 w.write("    router." + (r.async ? "addAsync" : "add") + "(" + literal(r.verb) + ", " + literal(r.path) + ", request -> {\n");
+                if (r.secured) {
+                    w.write("      final dev.fastframe.core.http.Response denied = dev.fastframe.auth.Authorization.require(request, "
+                            + (r.grant == null ? "null" : literal(r.grant)) + ");\n");
+                    if (r.async) w.write("      if (denied != null) return java.util.concurrent.CompletableFuture.completedFuture(denied);\n");
+                    else w.write("      if (denied != null) return denied;\n");
+                }
                 if (hasBoundValues) {
                     // Generated locals avoid per-request argument arrays and boxing.
                     for (int n = 0; n < r.arguments.size(); n++) {
@@ -384,6 +403,24 @@ public final class FastFrameProcessor extends AbstractProcessor {
         }
     }
 
+    /** Build-time route metadata for `fastframe route:list` (no runtime scanning). */
+    private void writeRouteManifest(List<Route> routes) throws IOException {
+        FileObject file = processingEnv.getFiler().createResource(
+                StandardLocation.CLASS_OUTPUT, "", "META-INF/fastframe/routes.tsv");
+        try (Writer writer = file.openWriter()) {
+            writer.write("# method\tpath\tcontroller#method\n");
+            for (Route route : routes) {
+                // TSV is a deliberately simple format: reject unescaped control chars.
+                String handler = route.bean.name + "#" + route.method.getSimpleName();
+                if ((route.path + handler).matches("(?s).*[\\t\\r\\n].*")) {
+                    fail(route.method, "Route paths cannot contain tabs or newlines");
+                    continue;
+                }
+                writer.write(route.verb + "\t" + route.path + "\t" + handler + "\n");
+            }
+        }
+    }
+
     private static String literal(String input) {
         return "\"" + input.replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t") + "\"";
@@ -404,5 +441,5 @@ public final class FastFrameProcessor extends AbstractProcessor {
     }
 
     private record Route(String verb, String path, Bean bean, ExecutableElement method,
-                         boolean async, List<String> arguments) { }
+                         boolean async, List<String> arguments, boolean secured, String grant) { }
 }

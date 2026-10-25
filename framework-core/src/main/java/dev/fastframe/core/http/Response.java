@@ -25,6 +25,15 @@ public final class Response {
                 Objects.requireNonNull(value).getBytes(StandardCharsets.UTF_8), Map.of());
     }
 
+    /** Binary response. Defensive copy prevents subsequent mutation. */
+    public static Response bytes(byte[] data, String contentType) {
+        Objects.requireNonNull(data, "data");
+        Objects.requireNonNull(contentType, "contentType");
+        if (!contentType.matches("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+"))
+            throw new IllegalArgumentException("Invalid media type");
+        return new Response(200, contentType, data.clone(), Map.of());
+    }
+
     public static Response json(String alreadySerializedJson) {
         return new Response(200, "application/json; charset=utf-8",
                 Objects.requireNonNull(alreadySerializedJson).getBytes(StandardCharsets.UTF_8), Map.of());
@@ -32,7 +41,7 @@ public final class Response {
 
     /** Serialize supported Java values safely. The original json(String) accepts raw JSON. */
     public static Response jsonValue(Object value) {
-        return json(Json.stringify(value));
+        return new Response(200, "application/json; charset=utf-8", Json.utf8(value), Map.of());
     }
 
     public Response status(int code) { return new Response(code, contentType, body, headers); }

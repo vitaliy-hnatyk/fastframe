@@ -1,3 +1,122 @@
+# FastFrame v0.21 — Performance & Memory Optimizations
+
+**New in v0.21:** direct UTF-8 JSON response encoding, lower-allocation HTTP paths, Windows JFR profiling and fixed benchmark JAR version resolution. See [PERFORMANCE.md](PERFORMANCE.md) for commands, evidence, limits and repeatable benchmark procedure.
+
+# FastFrame v0.19 — Production Hardening (experimental)
+
+**New in v0.19:** server-generated `X-Request-ID`, bounded Prometheus-style HTTP metrics, optional structured access-log payload, liveness/readiness endpoints, and graceful draining of active Netty requests. See [OBSERVABILITY.md](OBSERVABILITY.md) for configuration, security boundaries, lifecycle and tests.
+
+Windows with Java 21: run `.\scripts\observability-smoke.ps1`, then `.\scripts\run-demo.ps1`. System Java 8 can remain installed; Windows scripts prefer JDK 21.
+
+**Caution:** Complete Maven/Netty build has not yet been run in this authoring environment. v0.19 is not production certified. Metrics are localhost-only and disabled by default. OpenTelemetry is not yet implemented.
+
+---
+
+## FastFrame v0.19 — Feature Testing
+
+New test-scoped `framework-testing` module: real Netty HTTP feature tests, JSON assertions, Bearer-auth tests, isolated H2 databases, typed factories, and mock outbound HTTP. See [TESTING.md](TESTING.md).
+
+Windows: `.\scripts\testing-smoke.ps1` (JDK 21). This is an experimental release, not production-ready.
+
+---
+
+## FastFrame v0.17 — Providers & Events
+
+New `framework-application` / `framework-events` modules and Artisan-like `make:provider` / `make:listener`. See [BOOTSTRAP_EVENTS.md](BOOTSTRAP_EVENTS.md).
+
+# FastFrame v0.16 — More Artisan generators + .env configuration
+
+**New:** `framework-config` (optional `.env`, immutable typed configuration, environment variable overrides) and the CLI generators `make:service`, `make:request`, `make:middleware`, `make:job`. Previous CLI commands remain available. See [CONFIG.md](CONFIG.md) and [CLI.md](CLI.md).
+
+**Windows PowerShell (JDK 21; global Java 8 remains untouched):**
+
+```powershell
+cd C:\xampp\www\fastframe
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\config-smoke.ps1
+.\scripts\cli-smoke.ps1
+.\scripts\ff.ps1 make:service Invoice
+.\scripts\ff.ps1 make:request CreateInvoice
+.\scripts\ff.ps1 make:middleware Audit
+.\scripts\ff.ps1 make:job SendInvoice
+.\scripts\run-demo.ps1
+```
+
+**Security:** do not store a live `.env` with secrets under `C:\xampp\www` (Apache docroot). Place it outside the web root and use `FF_ENV_FILE`; `.htaccess` is only a secondary measure. `.env` is ignored by Git; `.env.example` contains no credentials. This version is a development prototype, **not production-ready**.
+
+---
+
+# FastFrame v0.15 — Artisan-style CLI (Java 21 / Netty)
+
+**New:** `framework-cli` + `scripts/ff.ps1` (Windows) and `scripts/ff.sh` (macOS/Linux) with `make:controller`, `make:model`, `make:migration`, and `route:list`. Generates code compatible with existing FastFrame annotations and ORM models; `route:list` shows **annotated routes only**, using metadata generated at compile time. See [CLI.md](CLI.md) for exact commands, known limitations and Windows JDK 21 instructions.
+
+PowerShell quick start from the project root:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\cli-smoke.ps1
+.\scripts\ff.ps1 make:controller Post
+.\scripts\ff.ps1 make:model Post
+.\scripts\ff.ps1 make:migration create_posts
+.\scripts\ff.ps1 route:list
+```
+
+CLI is dependency-free at runtime; everything else in v0.14 remains available. **Experimental, not production-ready.**
+
+---
+
+# FastFrame v0.14 — Storage + Async HTTP Client (Java 21 / Netty)
+
+**New modules:** `framework-storage` (bounded local file CRUD), optional `framework-storage-s3` (AWS SDK v2), and `framework-http-client` (JDK `HttpClient.sendAsync`, timeouts and response size limits). Binary `application/octet-stream` request bodies are preserved without UTF-8 conversion; upload demo routes are **off by default**. See [STORAGE_HTTP.md](STORAGE_HTTP.md) for API examples, security constraints and Windows steps.
+
+Windows: `./scripts/storage-smoke.ps1` followed by `./scripts/run-demo.ps1`. Existing queue/cache/ORM/auth features remain available. **Experimental — not production-ready.**
+
+---
+
+# FastFrame v0.13 — Queues & Scheduler (Java 21 / Netty)
+
+**New:** optional `framework-cache` (bounded in-memory TTL/LRU, `get`, `put`, `add`,
+`remember`, `rememberForever`, `forever`, `forget`) and optional
+`framework-cache-redis` (Lettuce Redis `SET NX PX`).
+
+See [CACHE.md](CACHE.md) for the full API, Redis URI security guidance, Windows build,
+and blocking Redis/Netty precautions.
+
+Windows quick start:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\cache-smoke.ps1
+.\scripts\run-demo.ps1
+# In another terminal: curl.exe http://localhost:8080/api/cache/demo
+```
+
+**Experimental, not production-ready.** Redis integration tests require an external Redis instance;
+full Maven/Netty integration has not been performed in the source-generation environment.
+
+---
+
+# FastFrame v0.10.0 — Java 21 + Netty + typed ORM + SQL migrations
+
+**Windows ready** — preserves the Java 21 auto-detection, Windows benchmark scripts and annotation processor fixes from prior releases. See [ORM_MIGRATIONS.md](ORM_MIGRATIONS.md) for working model/SQL examples.
+
+Quick start (PowerShell from the repository root):
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+$env:FF_DB_URL = 'jdbc:h2:mem:fastframe;DB_CLOSE_DELAY=-1'
+.\scripts\run-demo.ps1
+# another terminal: curl.exe http://localhost:8080/api/db/users
+```
+
+Verify: `mvn -B -ntp -pl demo-app -am clean verify` or `./scripts/orm-smoke.ps1` (PowerShell). For explicit SQL migrations use `./scripts/migrate.ps1` (FF_DB_URL required). **No blocking database access inside Netty event loops.**
+
+---
+
+# FastFrame v0.9 — optional Laravel-inspired JDBC database module
+
+**New:** `framework-database` with parameterized Query Builder, CRUD and transactions. See [DATABASE.md](DATABASE.md) for Java API, Windows run commands, testing, and limitations. This builds on v0.7.1 (annotation processor & JSON-test fixes preserved); v0.8 performance profiling remains a separate future milestone.
+
 # FastFrame v0.7.1 — Laravel-inspired Java + Netty framework (prototype)
 
 Experimental Java 21 / Netty 4.2 framework with compile-time routing, singleton constructor DI, async middleware/controllers, and **JSON request binding to Java record DTOs with field validation**. The processor generates Java source so there is no runtime reflection to find controllers or construct request DTOs.
@@ -108,7 +227,7 @@ bash scripts/benchmark-smoke.sh
 ```bash
 mvn -pl demo-app -am clean verify
 mvn -pl demo-app -am package
-java -jar demo-app/target/demo-app-0.7.1-SNAPSHOT.jar
+java -jar demo-app/target/demo-app-0.14.0-SNAPSHOT.jar
 ```
 
 Without Maven, run the **Java-only** core/processor smoke test:
@@ -255,3 +374,23 @@ git commit -F COMMIT_MESSAGE.txt
 ## Next milestone — v0.8
 
 Prioritize full macOS/Linux Maven integration tests, JFR allocated-bytes/request profiling, and a concurrency matrix (16/64/128/256) against Micronaut before pursuing more low-level Netty changes. Do not claim FastFrame is faster or uses less RAM until identical-load benchmarks with warmup, p99 latency, RPS, alloc/op and RSS are recorded.
+
+
+## v0.11 Authentication
+See [AUTHORIZATION.md](AUTHORIZATION.md) for Windows setup, HS256 bearer tokens, annotations, policy checks and security limitations. Run `scripts/auth-smoke.ps1` then `scripts/run-demo.ps1` on Windows.
+
+
+## FastFrame v0.13: Queues & Scheduler
+
+Includes `framework-queue`, optional `framework-queue-redis`, and standalone `queue-demo`.
+See [QUEUE_SCHEDULER.md](QUEUE_SCHEDULER.md) for Windows Java 21 commands, retry and lease semantics.
+
+```java
+jobs.dispatch("mail.welcome", "user:42").delay(Duration.ofSeconds(10)).maxAttempts(3).enqueue();
+```
+
+## v0.20 — Security Hardening
+
+Added `framework-security` with exact-origin CORS allowlist, per-IP in-memory rate limiting, optional HSTS and default security response headers. See [SECURITY.md](SECURITY.md) and [PRODUCTION.md](PRODUCTION.md).
+
+Windows: `./scripts/security-smoke.ps1` in PowerShell; build and launch through `./scripts/run-demo.ps1`. JWT and protected routes remain as in v0.19. CORS does **not** replace authentication/CSRF controls; the local limiter is not cluster-wide.

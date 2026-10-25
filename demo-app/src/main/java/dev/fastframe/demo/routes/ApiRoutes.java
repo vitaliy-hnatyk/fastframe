@@ -18,7 +18,7 @@ public final class ApiRoutes {
             }
             return next.proceed(request).thenApply(response -> response.header("X-Framework", "FastFrame"));
         });
-        router.get("/", request -> Response.text("FastFrame 0.6 on Netty"));
+        router.get("/", request -> Response.text("FastFrame 0.19 on Netty"));
         router.get("/api/health", request -> Response.jsonValue(java.util.Map.of("status", "ok")));
         router.getAsync("/api/async-demo", request -> CompletableFuture.supplyAsync(
                 () -> Response.jsonValue(java.util.Map.of("async", true)), blockingExecutor));

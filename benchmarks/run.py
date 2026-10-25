@@ -26,10 +26,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-JARS = {
-    "fastframe": ROOT / "benchmarks/fastframe-app/target/benchmark-fastframe-0.7.1-SNAPSHOT.jar",
-    "micronaut": ROOT / "benchmarks/micronaut-app/target/benchmark-micronaut-0.7.1.jar",
-}
+def project_version(path: Path) -> str:
+    """Use Maven coordinates, never a stale version hard-coded in benchmark scripts."""
+    import xml.etree.ElementTree as ET
+    document = ET.parse(path).getroot()
+    ns = {'m': 'http://maven.apache.org/POM/4.0.0'}
+    version = document.findtext('m:version', namespaces=ns)
+    if version is None:
+        version = document.findtext('m:parent/m:version', namespaces=ns)
+    if not version:
+        raise ValueError(f"Cannot determine Maven version from {path}")
+    return version.strip()
+
+
+def benchmark_jars(root: Path = ROOT) -> dict[str, Path]:
+    ff_version = project_version(root / 'benchmarks/fastframe-app/pom.xml')
+    mn_version = project_version(root / 'benchmarks/micronaut-app/pom.xml')
+    return {
+        'fastframe': root / f'benchmarks/fastframe-app/target/benchmark-fastframe-{ff_version}.jar',
+        'micronaut': root / f'benchmarks/micronaut-app/target/benchmark-micronaut-{mn_version}.jar',
+    }
+
+
+JARS = benchmark_jars()
+
 CASES = {
     "plain": ("GET", "/bench/plain", None, "text/plain"),
     "json": ("GET", "/bench/json", None, "application/json"),

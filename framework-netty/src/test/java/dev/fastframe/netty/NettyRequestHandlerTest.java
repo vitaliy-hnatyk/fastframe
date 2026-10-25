@@ -21,6 +21,29 @@ final class NettyRequestHandlerTest {
         return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, path);
     }
 
+
+    @Test
+    void octetStreamPreservesNonUtf8Bytes() {
+        byte[] payload = new byte[]{0, (byte) 0xff, 7, (byte) 0x80};
+        Router router = new Router().post("/binary", request ->
+                Response.bytes(request.bodyBytes(), "application/octet-stream"));
+        EmbeddedChannel channel = new EmbeddedChannel(new NettyRequestHandler(router));
+        try {
+            var incoming = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/binary",
+                    io.netty.buffer.Unpooled.wrappedBuffer(payload));
+            incoming.headers().set("Content-Type", "application/octet-stream");
+            channel.writeInbound(incoming);
+            FullHttpResponse response = channel.readOutbound();
+            assertNotNull(response);
+            try {
+                assertEquals(200, response.status().code());
+                byte[] actual = new byte[response.content().readableBytes()];
+                response.content().getBytes(response.content().readerIndex(), actual);
+                assertArrayEquals(payload, actual);
+            } finally { ReferenceCountUtil.release(response); }
+        } finally { channel.finishAndReleaseAll(); }
+    }
+
     @Test
     void syncResponseIsImmediateAndDoesNotScheduleTimeout() {
         Router router = new Router().get("/instant", req -> Response.text("ok"));
