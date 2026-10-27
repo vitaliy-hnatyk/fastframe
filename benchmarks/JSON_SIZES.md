@@ -53,9 +53,11 @@ To run Laravel development server for diagnostics (not a production comparison),
 
 ```powershell
 .\benchmarks\json-sizes.ps1 -Frameworks fastframe,micronaut,laravel -LaravelServer octane `
-  -Sizes 1kb,10kb,100kb,1mb -Duration 30s -Warmup 5s `
+  -Sizes '1kb','10kb','100kb','1mb' -Duration 30s -Warmup 5s `
   -Concurrency 64 -Repeats 3
 ```
+
+**PowerShell note:** Quote size labels such as `'1kb'` and `'1mb'`. Without quotes, PowerShell parses `1kb` as the integer `1024` before passing it to the script. The wrapper accepts and normalizes the four exact numeric equivalents (`1024`, `10240`, `102400`, `1048576`) for compatibility, but quoting is recommended. Invalid sizes are rejected.
 
 `-SkipBuild` and `-SkipPreflight` skip optional steps. PowerShell uses the project's Java 21 selector and does not change the system default JDK.
 

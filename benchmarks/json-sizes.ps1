@@ -3,7 +3,8 @@ param(
     [ValidateSet('fastframe','micronaut','laravel')][string[]] $Frameworks = @('fastframe','micronaut','laravel'),
     [ValidateSet('octane','artisan')][string] $LaravelServer = 'octane',
     [ValidateRange(1,512)][int] $LaravelWorkers = 4,
-    [ValidateSet('1kb','10kb','100kb','1mb')][string[]] $Sizes = @('1kb','10kb','100kb','1mb'),
+    # PowerShell parses unquoted 1kb/10kb/100kb/1mb as byte integers, before binding.
+    [object[]] $Sizes = @('1kb','10kb','100kb','1mb'),
     [string] $Duration = '30s',
     [string] $Warmup = '5s',
     [ValidateRange(1,4096)][int] $Concurrency = 64,
@@ -16,6 +17,25 @@ param(
     [switch] $SkipPreflight
 )
 $ErrorActionPreference = 'Stop'
+# Convert both quoted size labels and PowerShell's unquoted numeric byte literals
+# to the exact labels accepted by benchmarks/json_sizes.py. Preserve order.
+# Reject all other values, including arbitrary byte counts.
+$sizeAliases = @{
+    '1kb' = '1kb'; '1024' = '1kb'
+    '10kb' = '10kb'; '10240' = '10kb'
+    '100kb' = '100kb'; '102400' = '100kb'
+    '1mb' = '1mb'; '1048576' = '1mb'
+}
+if ($Sizes.Count -eq 0) { throw 'Sizes must contain at least one of 1kb, 10kb, 100kb, 1mb' }
+$Sizes = [string[]]@(
+    foreach ($item in $Sizes) {
+        $key = ([string]$item).Trim().ToLowerInvariant()
+        if (-not $sizeAliases.ContainsKey($key)) {
+            throw "Invalid -Sizes value '$item'; expected 1kb, 10kb, 100kb, or 1mb (quote size labels in PowerShell)."
+        }
+        $sizeAliases[$key]
+    }
+)
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $root 'scripts\windows-env.ps1')
 Use-FastFrameJava21

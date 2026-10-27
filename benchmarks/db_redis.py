@@ -134,7 +134,13 @@ def request_spec(case,base_url):
 
 def verify_response(base_url, case, timeout=8):
     method,url=request_spec(case,base_url)
-    request=urllib.request.Request(url, method=method)
+    # Use the exact POST media type configured for the measured hey requests.
+    # An empty POST without Content-Type may pass a preflight even though hey's
+    # default (text/html) is rejected by Micronaut with HTTP 415.
+    headers={'Accept':'application/json'}
+    if method=='POST':
+        headers['Content-Type']='application/json'
+    request=urllib.request.Request(url, method=method, headers=headers)
     with urllib.request.urlopen(request,timeout=timeout) as reply:
         body=reply.read(4096)
         if reply.status!=200 or not reply.headers.get('Content-Type','').lower().startswith('application/json'):
@@ -146,8 +152,14 @@ def verify_response(base_url, case, timeout=8):
 
 def hey_command(base_url,case,concurrency,duration):
     method,url=request_spec(case,base_url)
-    return ['hey','-o','csv','-c',str(concurrency),'-z',duration,
-            '-m',method,'-t','20',url]
+    command=['hey','-o','csv','-c',str(concurrency),'-z',duration,
+             '-m',method,'-t','20']
+    # hey defaults to Content-Type: text/html; Micronaut @Post consumes JSON.
+    # Preflight, warmup and measured requests must share the same contract.
+    if method=='POST':
+        command.extend(['-T','application/json'])
+    command.append(url)
+    return command
 
 
 def save_rows(directory,rows):

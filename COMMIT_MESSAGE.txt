@@ -1,3 +1,1 @@
-fix(bench): retain DB/Redis HTTP failure evidence in CI
-
-Preserve hey status breakdown, compressed CSV, backend side effects and server logs; upload diagnostics on failed Micronaut INSERT.
+fix(bench): normalize PowerShell JSON-size labels and quote Windows CI args

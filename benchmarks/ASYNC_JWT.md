@@ -70,3 +70,27 @@ Results land in `benchmarks/results/async-jwt-<timestamp>/`:
 **Important caveats:** Java async completion and PHP Octane synchronous worker waits are different concurrency models. Use equivalent outbound semantics but expect different scaling under long external waits. The upstream and load generator share the same machine by default; their load may limit high-concurrency results. Java uses a single process for sampled RSS/CPU; Octane has child workers and resource metrics for Laravel are null (unknown, not zero). With `hey -o csv`, client-side logging can limit high RPS. HTTP/1.1 keep-alive is available but connection pooling varies across runtimes. Use at least three independent repeats for publication-grade claims.
 
 The test has **no measured benchmark results included**; running it on your Mac produces the genuine values.
+
+## Windows cross-runtime JWT unit test (`javac --release 21`)
+
+The regression test compiles two standalone `BenchJwt.java` classes with a
+JDK 21+ `javac`, then executes a Java probe. On Windows, `java` and `javac`
+may resolve to different installations through `PATH`. The test now looks in
+`JAVA_HOME/bin` first and uses the matching runtime from the same directory.
+If JDK 21+ is absent, that individual test is skipped with the detected
+compiler versions. If a compatible compiler fails, the test prints its full
+`stdout`, `stderr`, and invocation instead of an opaque `CalledProcessError`.
+
+PowerShell diagnostic commands:
+
+```powershell
+where.exe java
+where.exe javac
+java -version
+javac -version
+$env:JAVA_HOME
+python -m unittest discover -s benchmarks/tests -p test_async_jwt.py -v
+```
+
+Make `JAVA_HOME` point to a **JDK** (not just a JRE), preferably JDK 21.
+CI should install JDK 21 so the cross-runtime test actually executes.

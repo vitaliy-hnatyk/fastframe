@@ -33,6 +33,33 @@ class ContractTests(unittest.TestCase):
                              'http://127.0.0.1:18080'+path)
             self.assertEqual(body,{'value':'ok'} if name in ('select','cache_get') else {'ok':True})
 
+    def test_post_hey_explicit_json_media_type(self):
+        # hey otherwise defaults to text/html. Micronaut rejects that with 415
+        # before entering DbRedisController, so database counters stay at zero.
+        for case, (method, _, _) in db_redis.CASES.items():
+            with self.subTest(case=case):
+                command=db_redis.hey_command('http://127.0.0.1:18080',case,8,'2s')
+                if method=='POST':
+                    self.assertEqual(command[command.index('-T')+1],'application/json')
+                else:
+                    self.assertNotIn('-T',command)
+
+    def test_preflight_and_hey_post_use_same_json_media_type(self):
+        class Reply:
+            status=200
+            headers={'Content-Type':'application/json'}
+            def __enter__(self):return self
+            def __exit__(self,*_):pass
+            def read(self,size):return b'{"ok":true}'
+        with mock.patch.object(db_redis.urllib.request,'urlopen',return_value=Reply()) as opener:
+            db_redis.verify_response('http://127.0.0.1:18080','insert')
+        request=opener.call_args.args[0]
+        self.assertEqual(request.get_method(),'POST')
+        self.assertEqual(request.get_header('Content-type'),'application/json')
+        self.assertEqual(request.get_header('Accept'),'application/json')
+        self.assertEqual(db_redis.hey_command('http://localhost','insert',8,'2s')[-3:-1],
+                         ['-T','application/json'])
+
     def test_invalid_case(self):
         with self.assertRaisesRegex(ValueError,'Unknown'):db_redis.request_spec('hack','http://localhost')
 

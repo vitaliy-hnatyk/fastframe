@@ -3,6 +3,8 @@ import argparse
 import csv
 import json
 import os
+import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -15,6 +17,46 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import async_jwt
 import async_jwt_report
+
+
+def _find_jdk21_tools():
+    """Find a matching JDK 21+ compiler/runtime, preferring JAVA_HOME over PATH.
+
+    Windows often has java.exe (21) and javac.exe (17) from different
+    installations. Do not silently accept that mismatch or hide javac stderr.
+    """
+    suffix='.exe' if os.name=='nt' else ''
+    candidates=[]
+    if os.environ.get('JAVA_HOME'):
+        candidates.append(Path(os.environ['JAVA_HOME'])/'bin'/('javac'+suffix))
+    on_path=shutil.which('javac')
+    if on_path:
+        candidates.append(Path(on_path))
+    examined=[]
+    for javac in dict.fromkeys(candidates):
+        if not javac.is_file():
+            examined.append(f'{javac}: not found')
+            continue
+        try:
+            completed=subprocess.run([str(javac),'-version'],capture_output=True,
+                                     text=True,timeout=10)
+        except (OSError,subprocess.TimeoutExpired) as error:
+            examined.append(f'{javac}: {error}')
+            continue
+        version=(completed.stdout+' '+completed.stderr).strip()
+        match=re.search(r'\bjavac\s+(\d+)(?:\.\d+)*',version)
+        if completed.returncode or not match:
+            examined.append(f'{javac}: {version or "version unavailable"}')
+            continue
+        if int(match.group(1))<21:
+            examined.append(f'{javac}: {version} (requires JDK 21+)')
+            continue
+        java=javac.with_name('java'+suffix)
+        if not java.is_file():
+            examined.append(f'{javac}: matching java executable not found')
+            continue
+        return str(javac),str(java),version
+    return None,None,'; '.join(examined) or 'javac not found; set JAVA_HOME to JDK 21+'
 
 
 def metric_row(case='async_50', repeat=1, framework='fastframe', valid=True, errors=0):
@@ -76,6 +118,36 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(env['APP_ENV'],'production')
 
 
+class JavaToolchainTests(unittest.TestCase):
+    def test_jdk_selection_uses_compiler_and_runtime_from_same_directory(self):
+        javac,java,details=_find_jdk21_tools()
+        if not javac:
+            self.assertTrue('JDK 21' in details or 'javac' in details)
+        else:
+            self.assertEqual(Path(javac).parent,Path(java).parent)
+            self.assertTrue(Path(javac).is_file())
+            self.assertTrue(Path(java).is_file())
+
+    def test_older_javac_is_reported_not_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory)
+            binary=home/'bin'/('javac'+('.exe' if os.name=='nt' else ''))
+            # On Windows an absolute mock path is still accepted if is_file().
+            binary.parent.mkdir()
+            binary.touch()
+            class Fake:
+                returncode=0
+                stdout='javac 17.0.12'
+                stderr=''
+            with mock.patch.dict(os.environ,{'JAVA_HOME':str(home)}), \
+                 mock.patch.object(shutil,'which',return_value=None), \
+                 mock.patch.object(subprocess,'run',return_value=Fake()):
+                javac,java,details=_find_jdk21_tools()
+            self.assertIsNone(javac)
+            self.assertIsNone(java)
+            self.assertIn('requires JDK 21+',details)
+
+
 class CrossRuntimeSignatureTests(unittest.TestCase):
     def test_php_route_validates_real_signature_without_composer(self):
         import shutil
@@ -93,9 +165,9 @@ class CrossRuntimeSignatureTests(unittest.TestCase):
                 self.assertEqual(json.loads(proc.stdout)['status'],expected)
 
     def test_java_verifiers_agree_on_signed_token(self):
-        import shutil
-        if not shutil.which('java') or not shutil.which('javac'):
-            self.skipTest('JDK 21 unavailable')
+        javac,java,jdk_info=_find_jdk21_tools()
+        if not javac:
+            self.skipTest('JDK 21+ unavailable: '+jdk_info)
         root=Path(async_jwt.ROOT)/'benchmarks'
         one=root/'fastframe-app/src/main/java/dev/fastframe/benchmark/BenchJwt.java'
         two=root/'micronaut-app/src/main/java/dev/fastframe/micronautbench/BenchJwt.java'
@@ -108,10 +180,14 @@ class CrossRuntimeSignatureTests(unittest.TestCase):
                 System.out.println(dev.fastframe.benchmark.BenchJwt.valid("Bearer " + a[1]));
                 System.out.println(dev.fastframe.micronautbench.BenchJwt.valid("Bearer " + a[1]));
             }}""")
-            subprocess.run(['javac','--release','21','-d',str(folder),str(one),str(two),str(probe)],
-                           capture_output=True,text=True,timeout=15,check=True)
+            command=[javac,'--release','21','-d',str(folder),str(one),str(two),str(probe)]
+            compiled=subprocess.run(command,capture_output=True,text=True,timeout=20)
+            if compiled.returncode:
+                self.fail('JWT javac failed ('+jdk_info+') using '+javac+'\n'
+                          +'Command: '+' '.join(command)+'\n'
+                          +'stdout:\n'+compiled.stdout+'\nstderr:\n'+compiled.stderr)
             secret='local-cross-runtime-test-signing-secret-12345'
-            proc=subprocess.run(['java','-cp',str(folder),'JwtProbe',
+            proc=subprocess.run([java,'-cp',str(folder),'JwtProbe',
                        async_jwt.make_jwt(secret),async_jwt.make_jwt(secret,expired=True)],
                        env={**os.environ,'BENCH_JWT_SECRET':secret},
                        capture_output=True,text=True,timeout=10,check=True)

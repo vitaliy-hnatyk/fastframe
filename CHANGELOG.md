@@ -1,3 +1,16 @@
+## v0.22.0 — Windows PowerShell JSON-size argument hotfix (2026-10-27)
+
+- Fix `json-sizes.ps1 -Sizes 1kb,10kb,100kb,1mb`: PowerShell treats unquoted `kb`/`mb` tokens as numeric byte literals, so the previous `ValidateSet` rejected `1024` before the wrapper could launch Python.
+- Normalize either quoted string size keys or the four exact numeric byte values into canonical `1kb`, `10kb`, `100kb`, `1mb`. Reject unsupported values before starting builds or workloads.
+- Quote labels explicitly in the GitHub Actions Windows JSON sizes smoke test and in the Windows usage documentation.
+- Add regression guards for aliases, Python compatibility, CI invocation, and documentation. No Java/PHP/runtime benchmark behavior changed.
+
+## v0.22.0 — 2026-10-27 DB/Redis media-type + Windows JWT test fixes
+
+- **Micronaut HTTP 415**: `hey` uses `text/html` by default. The Database/Redis runner now sends `-T application/json` for POST operations (INSERT, UPDATE, transaction, Redis SET), matching the preflight request headers and Micronaut's `@Post` JSON contract. FastFrame and Laravel receive the same POST Content-Type for fairness.
+- **Windows JDK mismatch**: the Java JWT cross-runtime test selects `JAVA_HOME/bin/javac` before `PATH`, requires a matching Java runtime from the same JDK 21+ installation, skips with a clear explanation if no eligible JDK exists, and prints the complete compiler stderr if compilation fails on JDK 21+.
+- Added tests for POST header parity and Java toolchain selection; no benchmark results were modified.
+
 ### v0.22 — Database/Redis CI HTTP-error diagnostics hotfix
 
 - Preserve the `hey` HTTP status-code histogram (including status `0`) and actual persisted row counts when Micronaut INSERT or another database case fails. Previous behavior deleted the only raw CSV before reporting an invalid row.

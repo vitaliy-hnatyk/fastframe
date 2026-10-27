@@ -283,7 +283,7 @@ jobs:
         run: |
           $env:Path = "$(go env GOPATH)\bin;$env:Path"
           ./benchmarks/json-sizes.ps1 -SkipBuild -SkipPreflight -Frameworks fastframe,micronaut `
-            -Sizes 1kb,10kb,100kb,1mb -Duration 2s -Warmup 0s -Concurrency 8 -Repeats 1
+            -Sizes '1kb','10kb','100kb','1mb' -Duration 2s -Warmup 0s -Concurrency 8 -Repeats 1
 
   laravel-benchmark-preflight:
     runs-on: ubuntu-latest

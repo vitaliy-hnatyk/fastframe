@@ -6,6 +6,23 @@ stopped at Micronaut INSERT (`errors=11567`, `persisted=False`). That output doe
 failure, and a committed INSERT whose HTTP response failed require different
 fixes. Do not change SQL semantics, hide errors, or compare those RPS figures.
 
+## Diagnosed later: Micronaut INSERT returned HTTP 415
+
+A later CI artifact revealed **every** Micronaut INSERT request returned
+`415 Unsupported Media Type` (`status_counts={"415":8672}`, `db_observed=0`).
+This identifies a *client request header mismatch*, not a failed JDBC write.
+The `hey` CLI defaults to `Content-Type: text/html` (`-T`); Micronaut's
+`@Post` handlers consume `application/json` by default. An empty-body
+`urllib.request` preflight did not send that header, so its success could not
+validate what `hey` actually sent.
+
+`benchmarks/db_redis.py` now sets `-T application/json` for **all four POST
+workloads**, on all three frameworks, and sends `Content-Type: application/json`
+in preflight. No request body or SQL logic changes, and the workload still
+verifies backend row counts. Rebuild **not required** (Python-only hotfix).
+Repeat the `micronaut --cases insert` command below and confirm both
+`errors=0` and `persisted=True` before comparing throughput.
+
 ## Diagnostics added in this hotfix
 
 On *any failed timed phase*, `benchmarks/db_redis.py` now:
@@ -51,9 +68,9 @@ and `micronaut-repeat-1.log` files. The failed CSV contains the status for
 | `0` | Transport failure, timeout, reset or connection closure |
 | Only `200`, but database row count differs | Commit-vs-response accounting, or verification contract |
 
-These are diagnostic leads, **not** claimed explanations for the original
-11,567 errors. Fix the actual error based on the recorded statuses and stack
-trace. The runner will continue to reject any row with errors or a failed
+The original 11,567-error run had no status breakdown. A subsequent run
+reported 8,672 HTTP 415 responses, which diagnosed the media-type mismatch.
+Confirm the fix in a real Micronaut load run before publishing any results. The runner will continue to reject any row with errors or a failed
 persistent-side-effect check.
 
 The CI runner uses 2-second phases for smoke tests; that is not sufficient to
