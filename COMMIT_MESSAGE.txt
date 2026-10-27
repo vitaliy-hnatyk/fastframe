@@ -1,1 +1,3 @@
-fix(bench): repair PostgreSQL seed schema and Compose startup diagnostics
+fix(bench): retain DB/Redis HTTP failure evidence in CI
+
+Preserve hey status breakdown, compressed CSV, backend side effects and server logs; upload diagnostics on failed Micronaut INSERT.

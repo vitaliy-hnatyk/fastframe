@@ -297,8 +297,87 @@ def check_port_available(port: int) -> None:
         probe.listen(1)
 
 
+def _macos_listener_from_lsof(port: int) -> bool | None:
+    """Inspect LISTEN sockets without connecting to (and filling) their backlog.
+
+    macOS can refuse a new connect() once the accept backlog is full. Repeated
+    connect_ex() probes could therefore mistake a *live* listener for TIME_WAIT
+    and incorrectly switch to a different benchmark port. lsof is supplied by
+    macOS and checks the kernel's socket table without making connections.
+    None means lsof was unavailable or inconclusive; fall back to TCP probing.
+    """
+    executable = shutil.which('lsof')
+    if not executable:
+        system_lsof = Path('/usr/sbin/lsof')
+        executable = str(system_lsof) if system_lsof.is_file() else None
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, '-nP', '-t', f'-iTCP:{port}', '-sTCP:LISTEN'],
+            capture_output=True, text=True, timeout=3, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode == 0 and result.stdout.strip():
+        return True
+    if result.returncode == 1 and not result.stdout.strip():
+        return False
+    return None
+
+
+
+def _windows_listener_from_netstat(port: int) -> bool | None:
+    """Inspect Windows TCP LISTEN sockets without filling the accept backlog.
+
+    Repeated connect_ex() can return WSAECONNREFUSED for a live listener whose
+    accept backlog is full. netstat -ano reads the socket table without
+    connecting. None means the table cannot be trusted: do not classify an
+    unbindable Windows port as harmless TIME_WAIT on that basis.
+    """
+    executable = shutil.which('netstat')
+    if not executable:
+        return None
+    try:
+        result = subprocess.run([executable, '-ano'], capture_output=True,
+                                text=True, errors='replace', timeout=5,
+                                check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    unknown_state = False
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[0].upper() != 'TCP':
+            continue
+        _, separator, local_port = parts[1].rpartition(':')
+        if not separator or not local_port.isdigit() or int(local_port) != port:
+            continue
+        state = parts[3].upper()
+        if state == 'LISTENING':
+            return True
+        # Localized/unrecognized states must not be mistaken for TIME_WAIT.
+        if state not in {'TIME_WAIT', 'CLOSE_WAIT', 'FIN_WAIT_1', 'FIN_WAIT_2',
+                         'LAST_ACK', 'CLOSED', 'CLOSING', 'SYN_SENT',
+                         'SYN_RECEIVED', 'ESTABLISHED'}:
+            unknown_state = True
+    return None if unknown_state else False
+
+
 def port_has_listener(port: int) -> bool:
-    """Check for a real listening process; TIME_WAIT alone won't accept connects."""
+    """Check for a real TCP listener, not a TIME_WAIT-only local port.
+
+    Do not create probe connections on macOS when lsof can determine the state:
+    on a small/saturated accept backlog, connect_ex() is not a reliable test.
+    """
+    if sys.platform == 'darwin':
+        found = _macos_listener_from_lsof(port)
+        if found is not None:
+            return found
+    if sys.platform == 'win32':
+        found = _windows_listener_from_netstat(port)
+        if found is not None:
+            return found
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(0.25)
         try:
@@ -347,6 +426,12 @@ def select_server_port(preferred: int, wait_s: float = 2.0) -> int:
             raise OSError(errno.EADDRINUSE,
                           f'Active listener on 127.0.0.1:{preferred}; '
                           f'stop the existing server before benchmarking') from exc
+        if sys.platform == 'win32' and _windows_listener_from_netstat(preferred) is not False:
+            # A full backlog can fool connect_ex(), and an unavailable or
+            # localized socket listing is not proof of harmless TIME_WAIT.
+            raise OSError(errno.EADDRINUSE,
+                          f'Active listener or unverified TCP port on 127.0.0.1:{preferred}; '
+                          f'run: netstat -ano | findstr :{preferred}') from exc
     # A port with no listener may still be unavailable due to TIME_WAIT.
     # A new ephemeral port avoids waiting for the TCP lifetime to expire.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:

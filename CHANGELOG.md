@@ -1,3 +1,25 @@
+### v0.22 — Database/Redis CI HTTP-error diagnostics hotfix
+
+- Preserve the `hey` HTTP status-code histogram (including status `0`) and actual persisted row counts when Micronaut INSERT or another database case fails. Previous behavior deleted the only raw CSV before reporting an invalid row.
+- Keep compressed failed-phase CSV, limited server log tail and a per-case diagnostics JSON; do not retry writes or change the measured SQL workload.
+- Always publish DB/Redis reports, server logs and diagnostics as a short-lived GitHub Actions artifact even if the benchmark exits nonzero.
+- Added failure-forensics regression tests and `benchmarks/DATABASE_REDIS_FAILURES.md`.
+- This is a **diagnostic** hotfix: the reported `micronaut/insert` HTTP errors cannot be repaired confidently until the actual status-code histogram and server exception are known.
+
+## v0.22.0 — Windows CI active-listener regression fix (2026-10-27)
+
+- Fix `test_active_listener_must_not_be_used_or_silently_bypassed` on Windows GitHub Actions: `connect_ex()` may report connection refused when an active listener has a full accept backlog.
+- On Windows, inspect TCP socket LISTENING states using `netstat -ano` without creating TCP connections, including wildcard / IPv6 listener bindings. Retain conservative fallback for systems without accessible `netstat`.
+- Fail closed if a Windows port cannot be bound and the system's listener table is unavailable or inconclusive; avoid silently redirecting load to a different port with a live or unknown listener.
+- Add four deterministic Windows-specific regression tests for saturated backlogs, TIME_WAIT, locale/inconclusive netstat output, and fail-closed behavior.
+- No changes to Java/Netty/PHP code or benchmark performance calculations. Re-running Windows CI is still required for end-to-end verification.
+
+## v0.22.0 — macOS CI port listener hotfix (2026-10-27)
+
+- Fixed an intermittent macOS CI failure in `test_active_listener_must_not_be_used_or_silently_bypassed`: repeated TCP `connect_ex()` probes could fill a one-entry accept backlog and misidentify a live server as stale TCP state.
+- On macOS, check LISTEN sockets through `/usr/sbin/lsof` (or the executable on PATH), avoiding probe connections; keep a TCP fallback when `lsof` is unavailable.
+- Added regression tests for backlog-safe detection, no-listener results and missing `lsof`. No changes to application runtime or benchmark measurements.
+
 ## v0.22.0 — PostgreSQL benchmark initialization CI hotfix (2026-10-27)
 
 - Fix `benchmarks/services/schema.sql`: seed `bench_counter.counter_value`, not the nonexistent `value` column; the previous script made `postgres:16.6-alpine` exit during first initialization.

@@ -166,6 +166,26 @@ jobs:
             --duration 2s --warmup 0s --concurrency 8 --repeats 1 \
             --stop-services
 
+      - name: Upload Database/Redis benchmark diagnostics (also on failure)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-redis-smoke-diagnostics
+          path: |
+            benchmarks/results/db-redis-*/report.md
+            benchmarks/results/db-redis-*/report.html
+            benchmarks/results/db-redis-*/environment.json
+            benchmarks/results/db-redis-*/db-redis-results.csv
+            benchmarks/results/db-redis-*/db-redis-results.json
+            benchmarks/results/db-redis-*/diagnostics-*.json
+            benchmarks/results/db-redis-*/raw-*.csv.gz
+            benchmarks/results/db-redis-*/raw-*.csv
+            benchmarks/results/db-redis-*/fastframe-repeat-*.log
+            benchmarks/results/db-redis-*/micronaut-repeat-*.log
+            benchmarks/results/db-redis-*/laravel-*-repeat-*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Async HTTP and JWT smoke for all three frameworks (Laravel artisan)
         run: |
           python3 benchmarks/async_jwt.py --frameworks fastframe micronaut laravel \

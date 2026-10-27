@@ -404,3 +404,5 @@ python3 benchmarks/soak.py --frameworks fastframe micronaut laravel --case json 
 ```
 
 Detailed protocol and report interpretation: [`benchmarks/SOAK.md`](benchmarks/SOAK.md).
+
+Database/Redis CI failure diagnosis: see [benchmarks/DATABASE_REDIS_FAILURES.md](benchmarks/DATABASE_REDIS_FAILURES.md).

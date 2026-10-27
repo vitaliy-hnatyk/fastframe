@@ -6,7 +6,9 @@ Use only local Docker services created from benchmarks/services/compose.yaml.
 """
 from __future__ import annotations
 import argparse
+from collections import Counter
 import csv
+import gzip
 import json
 import os
 import platform
@@ -35,7 +37,7 @@ CASES={
     'cache_set':('POST','/bench/cache/set',{'ok':True}),
 }
 FIELDS=['framework','case','repeat','port','concurrency','requests','ok_2xx',
-        'errors','duration_s','rps','p50_ms','p95_ms','p99_ms','mean_ms',
+        'errors','status_counts','duration_s','rps','p50_ms','p95_ms','p99_ms','mean_ms',
         'rss_baseline_mb','rss_peak_mb','cpu_cores_avg','side_effect_ok','db_observed','redis_observed']
 
 
@@ -158,6 +160,78 @@ def save_rows(directory,rows):
     temp.write_text(json.dumps(rows,indent=2),encoding='utf-8');temp.replace(raw)
 
 
+def response_status_counts(path: Path) -> dict[str, int]:
+    """Count actual hey response statuses, including status 0 (transport errors).
+
+    Only rows accepted by run.csv_statistics() are counted so the histogram
+    sums to the same number of measured requests. Do not infer 500/429 from
+    aggregated error counts: the raw statuses must support that diagnosis.
+    """
+    counts: Counter[str] = Counter()
+    if not path.is_file():
+        return {}
+    with path.open(newline='', encoding='utf-8') as source:
+        rows = csv.DictReader(source)
+        if not rows.fieldnames or not {'response-time', 'status-code'}.issubset(rows.fieldnames):
+            return {}
+        for row in rows:
+            if not row.get('response-time'):
+                continue
+            try:
+                status = str(int(row['status-code']))
+            except (ValueError, TypeError, KeyError):
+                status = 'unparseable'
+            counts[status] += 1
+    return dict(sorted(counts.items(), key=lambda item: item[0]))
+
+
+def save_failure_diagnostics(directory: Path, label: str, case: str, repeat: int,
+                             raw: Path, logfile: Path, stats: dict | None,
+                             db_observed: str | None = None,
+                             redis_observed: str | None = None,
+                             cause: str | None = None) -> Path:
+    """Preserve evidence before stopping the benchmark process.
+
+    Do not retry write endpoints here: that would mutate PostgreSQL after the
+    measured phase and falsify the side-effect count.
+    """
+    counts = response_status_counts(raw)
+    try:
+        # 120 lines max; never emit entire potentially multi-hour server logs.
+        log_tail = '\n'.join(logfile.read_text(encoding='utf-8', errors='replace').splitlines()[-120:])[-18000:]
+    except OSError:
+        log_tail = '(server log unavailable)'
+    details = {'framework': label, 'case': case, 'repeat': repeat,
+               'http_status_counts': counts,
+               'stats': stats, 'db_observed': db_observed,
+               'redis_observed': redis_observed,
+               'error': cause, 'server_log_file': logfile.name,
+               'server_log_tail': log_tail}
+    destination = directory / f'diagnostics-{label}-{case}-r{repeat}.json'
+    tmp = destination.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(details, indent=2, ensure_ascii=False), encoding='utf-8')
+    tmp.replace(destination)
+    print(f'\n{label}/{case}: FAILED; hey HTTP status counts: {counts}; '
+          f'db_observed={db_observed}; redis_observed={redis_observed}\n'
+          f'Diagnostics: {destination}\n'
+          f'Last server log lines:\n{log_tail[-8000:] or "(no server log output)"}',
+          file=sys.stderr, flush=True)
+    return destination
+
+
+def preserve_failed_load(raw: Path, keep_raw: bool) -> Path | None:
+    """Retain failed hey CSV; compress by default for CI artifact storage."""
+    if not raw.is_file():
+        return None
+    if keep_raw:
+        return raw
+    compressed = raw.with_suffix(raw.suffix + '.gz')
+    with raw.open('rb') as source, gzip.open(compressed, 'wb', compresslevel=6) as dest:
+        shutil.copyfileobj(source, dest)
+    raw.unlink()
+    return compressed
+
+
 def env_for(framework,args,port):
     env={**os.environ,'PORT':str(port),'MAX_IN_FLIGHT':str(max(2048,args.concurrency*2)),
          'BENCH_DB_POOL':str(args.db_pool),'BENCH_IO_WORKERS':str(args.io_workers),
@@ -181,7 +255,8 @@ def run_framework(framework,repeat,args,directory,rows):
     base_url=f'http://127.0.0.1:{port}'
     label=result_framework(framework,args)
     namespace=argparse.Namespace(**vars(args));namespace.port=port
-    with (directory/f'{label}-repeat-{repeat}.log').open('w',encoding='utf-8') as logfile:
+    server_log=directory/f'{label}-repeat-{repeat}.log'
+    with server_log.open('w',encoding='utf-8') as logfile:
         proc=start_server(server_command(framework,namespace),framework,logfile,env_for(framework,args,port))
         try:
             wait_until_ready(proc,base_url,timeout_s=75 if framework=='laravel' else 40)
@@ -203,16 +278,40 @@ def run_framework(framework,repeat,args,directory,rows):
                     stats=run_load(proc.pid,hey_command(base_url,case,args.concurrency,args.duration),
                                    raw,baseline,args.metrics_backend,
                                    collect_process_metrics=framework!='laravel')
-                finally:
-                    if not args.keep_raw:raw.unlink(missing_ok=True)
-                ok,db_value,redis_value=side_effect(case,stats['ok_2xx'])
+                except Exception as ex:
+                    logfile.flush()
+                    save_failure_diagnostics(directory,label,case,repeat,raw,server_log,
+                                             stats=None,cause=f'hey/runner: {ex}')
+                    preserve_failed_load(raw,args.keep_raw)
+                    raise
+                counts=response_status_counts(raw)
+                try:
+                    ok,db_value,redis_value=side_effect(case,stats['ok_2xx'])
+                except Exception as ex:
+                    logfile.flush()
+                    save_failure_diagnostics(directory,label,case,repeat,raw,server_log,
+                                             stats=stats,cause=f'post-run verification: {ex}')
+                    preserve_failed_load(raw,args.keep_raw)
+                    raise
                 row={'framework':label,'case':case,'repeat':repeat,
                      'port':port,'concurrency':args.concurrency,**stats,
+                     'status_counts':json.dumps(counts,sort_keys=True),
                      'side_effect_ok':ok,'db_observed':db_value,'redis_observed':redis_value}
                 rows.append(row);save_rows(directory,rows)
                 print(f'{label:17} {case:11} #{repeat}: {row["rps"]:9.1f} RPS; '
                       f'p99={row["p99_ms"]:.2f}ms; errors={row["errors"]}; persisted={ok}',flush=True)
-                if not ok:raise RuntimeError(f'{label}/{case} backend verification failed')
+                if stats['errors'] or not ok:
+                    logfile.flush()
+                    save_failure_diagnostics(directory,label,case,repeat,raw,server_log,
+                                             stats=stats,db_observed=db_value,
+                                             redis_observed=redis_value,
+                                             cause=f'HTTP errors={stats["errors"]}, side_effect_ok={ok}')
+                    preserve_failed_load(raw,args.keep_raw)
+                    raise RuntimeError(f'{label}/{case}: HTTP errors={stats["errors"]}; '
+                                       f'side-effect verified={ok}; statuses={counts}; '
+                                       f'db_observed={db_value}; inspect diagnostics and server log')
+                if not args.keep_raw:
+                    raw.unlink(missing_ok=True)
         finally:
             stop_server(proc)
 

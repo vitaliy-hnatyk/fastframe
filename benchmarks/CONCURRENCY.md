@@ -113,3 +113,23 @@ python3 -m py_compile benchmarks/concurrency.py benchmarks/concurrency_report.py
 ```
 
 No production code or HTTP endpoint semantics are changed by this benchmark addition. The runner requires compiled benchmark JARs / installed PHP packages to perform real HTTP tests. No simulated benchmark results are included as actual results.
+
+## Windows listener detection and shared benchmark ports
+
+A benchmark must not mistake a previous server for its own. On Windows,
+`connect_ex()` alone is not a reliable indication of an active listener when
+the server's accept backlog is full. The runner reads `netstat -ano` TCP
+LISTENING entries before deciding whether a requested port is safe to use.
+It considers IPv4 and IPv6 listener entries; the check does not open TCP
+connections. If binding fails and the Windows socket table cannot be
+reliably inspected, the runner fails with a diagnostic error instead of
+silently changing ports. A genuinely stale TIME_WAIT socket may still
+trigger selection of a free port when netstat confirms no listener.
+
+When troubleshooting on Windows, inspect the listener and PID:
+
+```powershell
+netstat -ano | findstr :18080
+```
+
+The runner does **not** automatically kill another process using the port.
