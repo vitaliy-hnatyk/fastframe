@@ -8,7 +8,7 @@ if (-not $env:FF_DB_URL) { throw 'FF_DB_URL must be set to the target JDBC datab
 Push-Location $root
 try {
     if (-not $SkipBuild) { Invoke-FastFrameMaven -Parameters @('-B','-ntp','-pl','demo-app','-am','package') }
-    $jar = Join-Path $root 'demo-app/target/demo-app-0.21.0-SNAPSHOT.jar'
+    $jar = Join-Path $root 'demo-app/target/demo-app-0.22.0-SNAPSHOT.jar'
     if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) { throw "Missing $jar. Build first." }
     & (Join-Path $env:JAVA_HOME 'bin/java.exe') '-cp' $jar 'dev.fastframe.migrations.MigrationCli' $Directory
     if ($LASTEXITCODE -ne 0) { throw "Migrations failed with exit code $LASTEXITCODE" }

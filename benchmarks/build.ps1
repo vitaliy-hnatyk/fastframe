@@ -1,5 +1,6 @@
 # Windows build for FastFrame and Micronaut benchmark applications.
-param([switch] $SkipTests)
+param([switch] $SkipTests, [switch] $IncludeLaravel,
+      [ValidateSet('octane','artisan')][string] $LaravelServer = 'octane')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $root 'scripts\windows-env.ps1')
@@ -14,7 +15,12 @@ try {
     }
     Invoke-FastFrameMaven -Parameters $first
     Invoke-FastFrameMaven -Parameters $second
-    Write-Host 'Both benchmark applications built.'
+    if ($IncludeLaravel) {
+        $laravelArgs = @('benchmarks/setup_laravel.py')
+        if ($LaravelServer -eq 'octane') { $laravelArgs += '--with-octane' }
+        Invoke-FastFramePython -Parameters $laravelArgs
+    }
+    Write-Host 'Selected benchmark applications built.' 
 } finally {
     Pop-Location
 }

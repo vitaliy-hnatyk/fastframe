@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Reproducible HTTP benchmark driver for Windows, Linux and macOS (Python 3.10+).
+"""Sequential FastFrame, Micronaut, Laravel HTTP benchmark (Python 3.10+).
 
-All reported results are observed, never extrapolated or filled with dummy numbers.
-Run FastFrame and Micronaut sequentially to avoid CPU/RAM contention.
+All results are measured, never extrapolated. Laravel multi-process metrics are
+not reported to avoid misleading parent-only RSS/CPU comparisons.
 """
 from __future__ import annotations
 
 import argparse
 import csv
 import ctypes
+import errno
+import hashlib
 import ctypes.wintypes
 import json
 import math
 import os
 import platform
 import shutil
+import signal
+import socket
 import statistics
 import subprocess
 import sys
@@ -26,6 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+LARAVEL_ROOT = ROOT / 'benchmarks/laravel-app/runtime'
+AVAILABLE_FRAMEWORKS = ('fastframe', 'micronaut', 'laravel')
 def project_version(path: Path) -> str:
     """Use Maven coordinates, never a stale version hard-coded in benchmark scripts."""
     import xml.etree.ElementTree as ET
@@ -37,6 +43,19 @@ def project_version(path: Path) -> str:
     if not version:
         raise ValueError(f"Cannot determine Maven version from {path}")
     return version.strip()
+
+
+def laravel_metadata() -> dict:
+    """Record exact installed Composer package versions and lock hash when selected."""
+    lock = LARAVEL_ROOT / 'composer.lock'
+    if not lock.is_file():
+        return {'composer_lock_sha256': None, 'laravel_framework_version': None,
+                'laravel_octane_version': None}
+    payload = json.loads(lock.read_text(encoding='utf-8'))
+    versions = {item['name']: item['version'] for item in payload.get('packages', [])}
+    return {'composer_lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest(),
+            'laravel_framework_version': versions.get('laravel/framework'),
+            'laravel_octane_version': versions.get('laravel/octane')}
 
 
 def benchmark_jars(root: Path = ROOT) -> dict[str, Path]:
@@ -56,7 +75,7 @@ CASES = {
     "route": ("GET", "/bench/route/123", None, "text/plain"),
     "echo": ("POST", "/bench/echo", '{"message":"hello"}', "application/json"),
 }
-FIELDS = ["framework", "case", "repeat", "concurrency", "requests", "ok_2xx", "errors",
+FIELDS = ["framework", "case", "repeat", "port", "concurrency", "requests", "ok_2xx", "errors",
           "duration_s", "rps", "p50_ms", "p95_ms", "p99_ms", "mean_ms",
           "rss_baseline_mb", "rss_peak_mb", "cpu_cores_avg"]
 
@@ -247,6 +266,119 @@ def java_args(heap: str, jar: Path) -> list[str]:
     return ["java", f"-Xms{heap}", f"-Xmx{heap}", "-XX:+UseG1GC", "-jar", str(jar)]
 
 
+def server_command(framework: str, settings: argparse.Namespace) -> list[str]:
+    if framework == 'laravel':
+        if settings.laravel_server == 'artisan':
+            return ['php', 'artisan', 'serve', '--host=127.0.0.1',
+                    f'--port={settings.port}', '--no-reload']
+        return ['php', 'artisan', 'octane:start', '--server=frankenphp',
+                '--host=127.0.0.1', f'--port={settings.port}',
+                f'--workers={settings.laravel_workers}']
+    return java_args(settings.heap, JARS[framework])
+
+
+def result_framework(framework: str, settings: argparse.Namespace) -> str:
+    return f'laravel-{settings.laravel_server}' if framework == 'laravel' else framework
+
+
+def check_port_available(port: int) -> None:
+    """Probe whether a TCP listener can bind, ignoring harmless TIME_WAIT where allowed.
+
+    SO_REUSEADDR must be set *before* bind. A bare bind() without it can
+    falsely report EADDRINUSE immediately after the previous server exits.
+    listen() also checks that a second listener cannot claim the port.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        probe.bind(('127.0.0.1', port))
+        probe.listen(1)
+
+
+def port_has_listener(port: int) -> bool:
+    """Check for a real listening process; TIME_WAIT alone won't accept connects."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.25)
+        return probe.connect_ex(('127.0.0.1', port)) == 0
+
+
+def select_server_port(preferred: int, wait_s: float = 2.0) -> int:
+    """Preserve a user-selected port when possible, avoid stale TCP TIME_WAIT.
+
+    Refuse to start if another server is still *listening* on the preferred
+    port (so that old benchmark processes cannot falsify the preflight).
+    If no listener exists but the port cannot be rebound due to TIME_WAIT,
+    select a fresh ephemeral loopback port. The actual port is logged and
+    saved with every benchmark row. There is an unavoidable small race
+    between releasing the probe socket and starting the server.
+    """
+    deadline = time.monotonic() + wait_s
+    while port_has_listener(preferred):
+        if time.monotonic() >= deadline:
+            raise OSError(errno.EADDRINUSE,
+                          f'Active listener on 127.0.0.1:{preferred}; '
+                          f'run: lsof -nP -iTCP:{preferred} -sTCP:LISTEN')
+        time.sleep(0.1)
+    try:
+        check_port_available(preferred)
+        return preferred
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+    # A port with no listener may still be unavailable due to TIME_WAIT.
+    # A new ephemeral port avoids waiting for the TCP lifetime to expire.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(('127.0.0.1', 0))
+        alternative = probe.getsockname()[1]
+    print(f'Port {preferred} is in use by stale TCP state; '
+          f'using available port {alternative}', file=sys.stderr, flush=True)
+    return alternative
+
+
+def start_server(command: list[str], framework: str, log, env: dict) -> subprocess.Popen:
+    opts = {'stdout': log, 'stderr': subprocess.STDOUT, 'env': env}
+    if framework == 'laravel':
+        opts['cwd'] = str(LARAVEL_ROOT)
+    if os.name == 'nt':
+        opts['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        opts['start_new_session'] = True
+    return subprocess.Popen(command, **opts)
+
+
+def stop_server(server: subprocess.Popen) -> None:
+    # Kill spawned web servers too: artisan serve launches php -S, Octane launches workers.
+    if os.name == 'nt':
+        subprocess.run(['taskkill', '/PID', str(server.pid), '/T', '/F'],
+                       capture_output=True, check=False)
+    else:
+        try:
+            os.killpg(server.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    try:
+        server.wait(timeout=6)
+    except subprocess.TimeoutExpired:
+        if os.name != 'nt':
+            try:
+                os.killpg(server.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            server.kill()
+        server.wait(timeout=6)
+
+
+def require_installed(framework: str, settings: argparse.Namespace) -> None:
+    if framework == 'laravel':
+        if not (LARAVEL_ROOT / 'artisan').is_file() or not (LARAVEL_ROOT / 'vendor/autoload.php').is_file():
+            raise ValueError('Laravel is not installed. Run python3 benchmarks/setup_laravel.py'
+                             + (' --with-octane' if settings.laravel_server == 'octane' else ''))
+        if settings.laravel_server == 'octane' and not (LARAVEL_ROOT / 'vendor/laravel/octane').exists():
+            raise ValueError('Laravel Octane missing. Run python3 benchmarks/setup_laravel.py --with-octane')
+    elif not JARS[framework].is_file():
+        raise ValueError(f'Missing {JARS[framework]}. Run benchmarks/build.sh first')
+
+
 def assert_endpoint(url: str, case: str) -> None:
     method, uri, body, content_type = CASES[case]
     headers = {"Content-Type": "application/json"} if body else {}
@@ -291,7 +423,8 @@ def hey_command(url: str, case: str, concurrency: int, duration: str) -> list[st
     return command
 
 
-def run_load(pid: int, command: list[str], path: Path, baseline_rss: float | None, backend: str) -> dict:
+def run_load(pid: int, command: list[str], path: Path, baseline_rss: float | None, backend: str,
+             collect_process_metrics: bool = True) -> dict:
     samples = []
     stop = threading.Event()
     def sample() -> None:
@@ -301,8 +434,9 @@ def run_load(pid: int, command: list[str], path: Path, baseline_rss: float | Non
                 samples.append(rss)
             stop.wait(0.1 if backend == "proc" else 0.5)
     monitor = threading.Thread(target=sample, daemon=True)
-    _, cpu_start = process_metrics(pid, backend)
-    monitor.start()
+    _, cpu_start = process_metrics(pid, backend) if collect_process_metrics else (None, None)
+    if collect_process_metrics:
+        monitor.start()
     start = time.monotonic()
     try:
         with path.open("w", encoding="utf-8", newline="") as output:
@@ -310,8 +444,9 @@ def run_load(pid: int, command: list[str], path: Path, baseline_rss: float | Non
     finally:
         elapsed = time.monotonic() - start
         stop.set()
-        monitor.join(timeout=2)
-    final_rss, cpu_end = process_metrics(pid, backend)
+        if collect_process_metrics:
+            monitor.join(timeout=2)
+    final_rss, cpu_end = process_metrics(pid, backend) if collect_process_metrics else (None, None)
     if final_rss is not None:
         samples.append(final_rss)
     if baseline_rss is not None:
@@ -329,44 +464,54 @@ def run_load(pid: int, command: list[str], path: Path, baseline_rss: float | Non
 
 
 def run_one(framework: str, settings: argparse.Namespace, repeat: int, output: Path) -> list[dict]:
-    url = f"http://127.0.0.1:{settings.port}"
-    env = {**os.environ, "PORT": str(settings.port), "MAX_IN_FLIGHT": str(max(256, settings.concurrency * 2))}
-    logfile = output / f"{framework}-run-{repeat}.log"
+    selected_port = select_server_port(settings.port)
+    server_settings = argparse.Namespace(**vars(settings))
+    server_settings.port = selected_port
+    url = f"http://127.0.0.1:{selected_port}"
+    label = result_framework(framework, settings)
+    env = {**os.environ, "PORT": str(selected_port),
+           "MAX_IN_FLIGHT": str(max(256, settings.concurrency * 2))}
+    if framework == 'laravel':
+        env.update({'APP_ENV': 'production', 'APP_DEBUG': 'false',
+                    'SESSION_DRIVER': 'array', 'CACHE_STORE': 'array',
+                    'QUEUE_CONNECTION': 'sync', 'LOG_CHANNEL': 'stderr'})
+    logfile = output / f"{label}-run-{repeat}.log"
     rows = []
     with logfile.open("w", encoding="utf-8") as log:
-        server = subprocess.Popen(java_args(settings.heap, JARS[framework]),
-                                  stdout=log, stderr=subprocess.STDOUT, env=env)
+        server = start_server(server_command(framework, server_settings), framework, log, env)
         try:
-            wait_until_ready(server, url)
+            wait_until_ready(server, url, timeout_s=60 if framework == 'laravel' else 35)
             for case in settings.cases:
                 assert_endpoint(url, case)
-            # Warm each endpoint independently so first-use costs are not counted.
             for case in settings.cases:
-                with (output / f"warmup-{framework}-{case}-{repeat}.csv").open("w", encoding="utf-8", newline="") as dest:
+                with (output / f"warmup-{label}-{case}-{repeat}.csv").open("w", encoding="utf-8", newline="") as dest:
                     subprocess.run(hey_command(url, case, min(settings.concurrency, 16), settings.warmup),
                                    stdout=dest, stderr=subprocess.PIPE, check=True)
             for case in settings.cases:
-                baseline, _ = process_metrics(server.pid, settings.metrics_backend)
-                destination = output / f"raw-{framework}-{case}-{repeat}.csv"
+                # The Laravel parent is not necessarily the process serving requests.
+                # NULL measurements are more truthful than pretending its RSS/CPU are total.
+                baseline, _ = ((None, None) if framework == 'laravel' else
+                               process_metrics(server.pid, settings.metrics_backend))
+                destination = output / f"raw-{label}-{case}-{repeat}.csv"
                 stats = run_load(server.pid, hey_command(url, case, settings.concurrency, settings.duration),
-                                 destination, baseline, settings.metrics_backend)
-                row = {"framework": framework, "case": case, "repeat": repeat,
-                       "concurrency": settings.concurrency, **stats}
+                                 destination, baseline, settings.metrics_backend,
+                                 collect_process_metrics=(framework != 'laravel'))
+                row = {"framework": label, "case": case, "repeat": repeat,
+                       "port": selected_port, "concurrency": settings.concurrency, **stats}
                 rows.append(row)
-                print(f"{framework:9} {case:6} #{repeat}: {row['rps']} RPS; "
+                print(f"{label:16} {case:6} #{repeat}: {row['rps']} RPS; "
                       f"p99={row['p99_ms']}ms; errors={row['errors']}", flush=True)
         finally:
-            server.terminate()
-            try:
-                server.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server.kill()
-                server.wait(timeout=5)
+            stop_server(server)
     return rows
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sequential FastFrame vs Micronaut benchmarking")
+    parser = argparse.ArgumentParser(description="Sequential FastFrame, Micronaut and Laravel benchmarking")
+    parser.add_argument('--frameworks', nargs='+', choices=AVAILABLE_FRAMEWORKS,
+                        default=['fastframe', 'micronaut'], help='opt in to Laravel explicitly')
+    parser.add_argument('--laravel-server', choices=['octane', 'artisan'], default='octane')
+    parser.add_argument('--laravel-workers', type=int, default=4)
     parser.add_argument("--duration", default="20s", help="hey duration per measured scenario")
     parser.add_argument("--warmup", default="5s", help="hey duration per warmup scenario")
     parser.add_argument("--concurrency", type=int, default=64)
@@ -382,14 +527,17 @@ def main() -> None:
         settings.metrics_backend = metrics_backend()
     except RuntimeError as exc:
         parser.error(str(exc))
-    if settings.concurrency < 1 or settings.repeats < 1:
+    if settings.concurrency < 1 or settings.repeats < 1 or settings.laravel_workers < 1:
         parser.error("--concurrency and --repeats must be positive")
-    for binary in ("java", "hey"):
+    for binary in (("hey",) + (("java",) if any(f != "laravel" for f in settings.frameworks) else ())
+                   + (("php",) if "laravel" in settings.frameworks else ())):
         if not shutil.which(binary):
             parser.error(f"Missing executable: {binary}")
-    for jar in JARS.values():
-        if not jar.is_file():
-            parser.error(f"Missing {jar}. Run benchmarks/build.ps1 (Windows) or benchmarks/build.sh first")
+    for framework in settings.frameworks:
+        try:
+            require_installed(framework, settings)
+        except ValueError as exc:
+            parser.error(str(exc))
     destination = settings.output / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     destination.mkdir(parents=True, exist_ok=False)
     environment = {"timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -399,14 +547,22 @@ def main() -> None:
                    "processor": platform.processor(), "cpu_count": os.cpu_count(),
                    "command": sys.argv, "heap": settings.heap, "duration": settings.duration,
                    "warmup": settings.warmup, "concurrency": settings.concurrency,
-                   "repeats": settings.repeats, "cases": settings.cases,
-                   "java_version": subprocess.run(["java", "-version"], capture_output=True, text=True).stderr,
+                   "repeats": settings.repeats, "preferred_port": settings.port, "cases": settings.cases,
+                   "frameworks": settings.frameworks, "laravel_server": settings.laravel_server,
+                   "laravel_workers": settings.laravel_workers,
+                   "laravel_metrics_note": "Laravel RSS/CPU null: parent process omits worker processes",
+                   "java_version": (subprocess.run(["java", "-version"], capture_output=True, text=True).stderr
+                                    if shutil.which('java') else None),
+                   "php_version": (subprocess.run(['php', '-v'], capture_output=True, text=True).stdout.splitlines()[0]
+                                   if shutil.which('php') and 'laravel' in settings.frameworks else None),
                    "hey_help": subprocess.run(["hey", "-h"], capture_output=True, text=True).stderr[:4000]}
+    if 'laravel' in settings.frameworks:
+        environment.update(laravel_metadata())
     (destination / "environment.json").write_text(json.dumps(environment, indent=2), encoding="utf-8")
     measurements = []
     try:
         for repeat in range(1, settings.repeats + 1):
-            order = ("fastframe", "micronaut") if repeat % 2 else ("micronaut", "fastframe")
+            order = (list(settings.frameworks) if repeat % 2 else list(reversed(settings.frameworks)))
             for framework in order:
                 measurements.extend(run_one(framework, settings, repeat, destination))
     finally:

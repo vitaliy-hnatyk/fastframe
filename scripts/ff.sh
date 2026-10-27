@@ -11,4 +11,4 @@ if [[ "${1:-}" != "--skip-build" ]]; then
 else
   shift
 fi
-java -jar framework-cli/target/framework-cli-0.21.0-SNAPSHOT.jar "$@" --root "$ROOT"
+java -jar framework-cli/target/framework-cli-0.22.0-SNAPSHOT.jar "$@" --root "$ROOT"

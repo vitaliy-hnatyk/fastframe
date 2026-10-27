@@ -17,7 +17,7 @@ try {
             Invoke-FastFrameMaven -Parameters @('-B', '-ntp', '-pl', 'demo-app', '-am', '-DskipTests', 'clean', 'compile')
         }
     }
-    $jar = Join-Path $root 'framework-cli\target\framework-cli-0.21.0-SNAPSHOT.jar'
+    $jar = Join-Path $root 'framework-cli\target\framework-cli-0.22.0-SNAPSHOT.jar'
     if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) {
         throw "Missing CLI jar: $jar. Run without -SkipBuild first."
     }

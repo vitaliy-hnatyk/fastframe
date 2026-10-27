@@ -14,11 +14,18 @@
     <dependencyManagement><dependencies>
         <dependency><groupId>io.micronaut.platform</groupId><artifactId>micronaut-platform</artifactId>
             <version>${micronaut.platform.version}</version><type>pom</type><scope>import</scope></dependency>
+        <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>6.3.3</version></dependency>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.7</version></dependency>
+        <dependency><groupId>io.lettuce</groupId><artifactId>lettuce-core</artifactId><version>7.9.0.RELEASE</version></dependency>
     </dependencies></dependencyManagement>
     <dependencies>
         <dependency><groupId>io.micronaut</groupId><artifactId>micronaut-runtime</artifactId></dependency>
         <dependency><groupId>io.micronaut</groupId><artifactId>micronaut-http-server-netty</artifactId></dependency>
         <dependency><groupId>io.micronaut.serde</groupId><artifactId>micronaut-serde-jackson</artifactId><version>${micronaut.serde.version}</version></dependency>
+        <!-- Versions managed above; these must be declared on the actual compile/runtime classpath. -->
+        <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></dependency>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+        <dependency><groupId>io.lettuce</groupId><artifactId>lettuce-core</artifactId></dependency>
     </dependencies>
     <build><plugins>
         <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.14.0</version>

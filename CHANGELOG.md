@@ -1,3 +1,81 @@
+## v0.22 — k6 fixed-arrival warmup hotfix
+
+- Fix `ReferenceError: maxVUs is not defined` in the shared `benchmarks/target_rps.js` workload by mapping the k6 `maxVUs` option to the defined `maxVus` value.
+- This fixes startup for both `benchmarks/target_rps.py` and `benchmarks/soak.py`, including warmup and measured runs.
+- Add Node.js mock-runtime regression testing of scenario initialization, one request, and `handleSummary` output to catch runtime identifier errors (which `node --check` misses).
+- Preserve the Micronaut Maven dependency fix and all six benchmark suites.
+
+## v0.22 — Async I/O & JWT benchmark addition (fifth suite)
+
+- Implemented asynchronous external HTTP waits (10, 50 and 200 ms) in FastFrame/Micronaut;
+  equivalent real outbound HTTP calls in Laravel Octane.
+- Added benchmark-only HS256 JWT verification with claim and expiry validation in all three targets;
+  positive, missing/forged/expired token preflights (HTTP 401).
+- Added a loopback asyncio upstream process with resettable per-delay completion counters
+  to verify that outbound network I/O was actually performed.
+- Added `benchmarks/async_jwt.py`, `async_jwt_report.py`, `upstream.py`,
+  shell/PowerShell wrappers, unit and HTTP integration tests, CI smoke tests,
+  HTML/Markdown/CSV/JSON reports and methodology documentation.
+- Preserved the earlier v0.22 concurrency, target RPS, JSON-size, PostgreSQL/Redis suites.
+- No performance claims without a real multi-framework benchmark run.
+
+## v0.22 — Database + Redis Benchmark Extension
+
+- Added real PostgreSQL 16.6 + Redis 7.4.2 Docker Compose benchmark services and deterministic fixtures.
+- Added SELECT, INSERT, UPDATE, transactional double UPDATE and Redis GET/SET HTTP routes to FastFrame, Micronaut and Laravel 13 Octane benchmarks.
+- FastFrame JDBC/Redis calls offloaded to a bounded worker pool; Micronaut offloaded to its blocking executor; both use HikariCP with matching pool sizes. Laravel uses parameterized PDO and Redis Predis.
+- Added `benchmarks/db_redis.py` runner (same hey load generator), persisted-state validation, atomic checkpoints and `db_redis_report.py` CSV/JSON/Markdown/offline HTML.
+- Added cross-platform scripts, documentation, Python regression tests and opt-in Docker Compose CI smoke.
+- Preserved prior Concurrency Scaling, Target RPS/p99, and JSON Sizes modes without changes.
+
+## v0.22.0-SNAPSHOT — JSON Sizes Benchmark
+
+- Add GET `/bench/json-size/{size}` to FastFrame, Micronaut and Laravel benchmark applications.
+- Produce 1,024, 10,240, 102,400, and 1,048,576 exact bytes of identical UTF-8 JSON; precompute immutable source strings, serialize JSON per request.
+- Add `json_sizes.py`: SHA/body/length validation, hey HTTP timing, RPS, payload MiB/s, p50/p95/p99, error count, OS resource metrics (excluding misleading Laravel parent-only memory), sequential server cleanup and recoverable results.
+- Add `json_sizes_report.py`: validity-aware median summaries; offline HTML SVG curves for RPS, MiB/s and p99; CSV, JSON and Markdown.
+- Add macOS/Linux/Windows launchers, tests, CI checks and `benchmarks/JSON_SIZES.md`. Preserve Concurrency Scaling and Target RPS / p99 unchanged.
+- Full three-server HTTP RPS results still require the user's local build and load-generator environment.
+
+## v0.22.0-SNAPSHOT — Target RPS / p99 (Open-Loop) + Concurrency Scaling
+
+- Keep existing concurrency scaling suite (1–1,024 clients, 30 seconds per level), three servers, four endpoints and existing reports.
+- Add `benchmarks/target_rps.py` with Grafana k6 `constant-arrival-rate` for controlled 60-second target RPS/p99 sweeps across FastFrame, Micronaut and Laravel Octane.
+- Add standalone k6 workload and versioned summary, dropped-iteration/error tracking, measured-vs-target delivery, safe server teardown, and recoverable CSV/JSON checkpoints.
+- Add `target_rps_report.py`: complete/incomplete repetition accounting, median summaries, offline HTML with achieved RPS and p99 curves, plus Markdown/CSV/JSON.
+- Add macOS/Linux and PowerShell launchers, tests for k6 parsing/under-delivery/HTTP failures/process cleanup and documentation in `benchmarks/TARGET_RPS.md`.
+- No Java/PHP runtime code changed; real three-server k6 performance figures must be measured on a machine with k6/Composer/Maven installed.
+
+## v0.22.0-SNAPSHOT — Concurrency Scaling Benchmark Suite
+
+- Add `benchmarks/concurrency.py`: 9 configurable concurrency levels (1–1,024), 30 seconds measured per level, for FastFrame/Micronaut/Laravel Octane on the same four endpoints.
+- Sequential server lifecycle with automatic port reuse fallback, endpoint preflight, warmup at each level, and guaranteed subprocess cleanup.
+- Export checkpointed CSV/JSON results after every completed level; default to deleting large raw `hey` sample files unless `--keep-raw` is selected.
+- Add `concurrency_report.py` for median summaries, validity checks and standalone offline HTML RPS/p99 graphs per scenario; report interruption as incomplete, never as zero RPS.
+- Add macOS/Linux shell and Windows PowerShell launchers, GitHub CI smoke, regression coverage and `benchmarks/CONCURRENCY.md`.
+- No runtime framework/HTTP endpoint logic changed; no cross-framework benchmark results are claimed until measured on the target machine.
+
+## Unreleased — benchmark TCP port reuse fix (v0.21)
+
+- Fix macOS `Errno 48` during sequential preflight after FastFrame shuts down.
+- Probe ports with `SO_REUSEADDR` and `listen()` to avoid false positives from stale TCP state.
+- Refuse active listeners; when no listener exists but the preferred port is still
+  temporarily unbindable, select a free ephemeral loopback port.
+- Propagate the selected port to Java and Laravel servers and record it in results CSV.
+- Add regression tests for occupied ports and lingering TCP connections.
+
+## Unreleased — Laravel benchmark integration (v0.21)
+
+- Added a reproducible Laravel 13 (PHP) benchmark fixture with matching plain, JSON,
+  route and echo endpoints, including JSON request parsing.
+- Added Composer setup and optional Laravel Octane/FrankenPHP mode, with explicit
+  development-server mode for smoke testing.
+- `benchmarks/run.py`, `preflight.py`, Windows PowerShell scripts and the summarizer
+  now support selecting Laravel as a third sequential benchmark target.
+- Laravel worker-process RSS/CPU readings are intentionally reported as unavailable
+  rather than incorrectly reporting the parent process only.
+- Benchmarks remain opt-in and the Maven reactor is unchanged.
+
 ## Documentation & branding refresh (v0.21 snapshot)
 
 - Added the selected FastFrame brand logo to `docs/assets/`, preserving the original artwork.
@@ -279,3 +357,17 @@ All notable changes to FastFrame are documented here. This project is a prototyp
 
 - Delay processor service registration until `process-classes` to prevent self-loading during compilation.
 - Add root verification to Windows launcher and ship flat extraction ZIP.
+
+### Test-only hotfix (v0.22.0-SNAPSHOT)
+
+- Correct `SecurityPolicyTest.windowRolloverAndRetryAfter` to account for the newly acquired A bucket at t=11s and B remaining active until t=13s.
+- No runtime security changes.
+
+### v0.22 — Benchmark Suite 6: 60-minute Soak (2026-10-27)
+
+- Added `benchmarks/soak.py` with k6 fixed-arrival 3600s per framework, 1-second validation mode, guaranteed process cleanup and recoverable partial results.
+- Added `psutil` parent+descendant monitoring for RSS and CPU, including Laravel Octane/FrankenPHP workers.
+- Added optional JDK `jstat -gc` sampling for Java heap and cumulative GC collections/time. PHP JVM-only fields are N/A.
+- Added independent HTTP health-probe error series, plus final k6 HTTP errors, dropped iterations, RPS and p99.
+- Added self-contained offline HTML resource charts, CSV/JSON/Markdown reports, macOS/Linux and PowerShell wrappers, regression tests and `benchmarks/SOAK.md`.
+- Preserved Concurrency Scaling, Target RPS/p99, JSON Sizes, Database & Redis, Async I/O & JWT benchmark modes.

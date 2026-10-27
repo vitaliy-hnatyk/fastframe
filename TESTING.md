@@ -67,8 +67,13 @@ try (var fixture = new H2DatabaseFixture()) {
 ```
 
 Each fixture gets a uniquely named **in-memory H2** database; `refresh` drops and
-recreates tables and `close` cleans up. This is **not** transaction rollback and not a
-substitute for integration tests on PostgreSQL/MySQL. Never run it on an external DB.
+recreates tables and `close` cleans up. The fixture uses `DATABASE_TO_LOWER=TRUE`:
+unquoted schema definitions such as `CREATE TABLE users` become lowercase and match
+FastFrame Query Builder's quoted identifiers (`"users"`). When using a custom H2
+connection without this setting, explicitly quote lowercase identifiers in your DDL,
+for example `CREATE TABLE "users" ("id" BIGINT PRIMARY KEY)`.
+This is **not** transaction rollback and not a substitute for integration tests on
+PostgreSQL/MySQL. Never run it on an external DB.
 
 ### Typed factories
 

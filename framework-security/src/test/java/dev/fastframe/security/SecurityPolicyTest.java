@@ -34,7 +34,12 @@ class SecurityPolicyTest {
         // Capacity guard cannot evict active key buckets.
         assertEquals(10, limiter.acquire("C"));
         now.addAndGet(Duration.ofSeconds(8).toNanos());
+        // At t=11s A's old bucket has expired, but reacquiring A fills
+        // its slot again. B is still active until t=13s; C must be denied.
         assertEquals(0, limiter.acquire("A"));
+        assertEquals(10, limiter.acquire("C"));
+        // Once B's bucket expires, its slot becomes available to C.
+        now.addAndGet(Duration.ofSeconds(2).toNanos());
         assertEquals(0, limiter.acquire("C"));
     }
 }

@@ -36,3 +36,7 @@ benchmarks/results/
 # JFR recordings and profiling logs
 benchmarks/jfr/
 *.jfr
+
+# Laravel benchmark project is generated from tracked route/bootstrap overlays.
+benchmarks/laravel-app/runtime/
+benchmarks/*-preflight.log

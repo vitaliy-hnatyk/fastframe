@@ -15,7 +15,7 @@ from run import csv_statistics, percentile, parse_ps_cpu_time, ps_metrics, windo
 class ResultsTest(unittest.TestCase):
     def test_benchmark_jars_track_pom_versions(self):
         jars = benchmark_jars()
-        self.assertEqual(jars['fastframe'].name, 'benchmark-fastframe-0.21.0-SNAPSHOT.jar')
+        self.assertEqual(jars['fastframe'].name, 'benchmark-fastframe-0.22.0-SNAPSHOT.jar')
         self.assertEqual(jars['micronaut'].name, 'benchmark-micronaut-0.9.0.jar')
 
     def test_percentile_interpolation(self):

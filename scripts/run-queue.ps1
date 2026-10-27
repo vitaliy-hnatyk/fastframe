@@ -14,7 +14,7 @@ try {
     if (-not $SkipBuild) {
         Invoke-FastFrameMaven -Parameters @('-B','-ntp','-pl','queue-demo','-am','clean','package')
     }
-    $jar=Join-Path $root 'queue-demo\target\queue-demo-0.21.0-SNAPSHOT.jar'
+    $jar=Join-Path $root 'queue-demo\target\queue-demo-0.22.0-SNAPSHOT.jar'
     if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) { throw "Missing $jar; rebuild without -SkipBuild" }
     $javaArgs=@('-jar',$jar,$Command)
     if ($Command -eq 'dispatch') { $javaArgs+= $Payload }

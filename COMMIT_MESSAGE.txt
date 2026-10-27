@@ -1,6 +1,5 @@
-docs(brand): add FastFrame logo and expand v0.21 README
+fix(bench): repair k6 maxVUs reference for soak and target RPS
 
-- Include approved logo artwork and documentation-ready assets
-- Replace accumulated snapshot notes with a navigable project README
-- Document Java 21/Windows setup, modules, examples, testing and benchmarks
-- Retain production-readiness warnings and link detailed guides
+- bind maxVUs option to correctly cased maxVus variable
+- add k6 JavaScript module initialization and summary regression tests
+- preserve Micronaut HikariCP/Lettuce dependency fix

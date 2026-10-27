@@ -20,6 +20,13 @@ public final class BenchController {
     @Get(uri="/route/{id}", produces=MediaType.TEXT_PLAIN)
     public String route(@PathVariable("id") String id) { return id; }
 
+    @Get(uri="/json-size/{size}", produces=MediaType.APPLICATION_JSON)
+    public io.micronaut.http.HttpResponse<Map<String, String>> jsonSize(@PathVariable("size") String size) {
+        Map<String, String> data = JsonSizeData.get(size);
+        return data == null ? io.micronaut.http.HttpResponse.notFound()
+                            : io.micronaut.http.HttpResponse.ok(data);
+    }
+
     @Post(uri="/echo", consumes=MediaType.APPLICATION_JSON, produces=MediaType.APPLICATION_JSON)
     public Map<String, String> echo(@Body EchoRequest request) {
         return Map.of("message", request.message());

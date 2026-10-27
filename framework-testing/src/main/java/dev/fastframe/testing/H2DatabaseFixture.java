@@ -13,7 +13,11 @@ public final class H2DatabaseFixture implements AutoCloseable {
     private final Database database;
     private boolean closed;
     public H2DatabaseFixture() {
-        url = "jdbc:h2:mem:ff_test_" + UUID.randomUUID().toString().replace("-", "") + ";DB_CLOSE_DELAY=-1";
+        // Query quotes identifiers (e.g. "users"); H2 normally folds unquoted
+        // CREATE TABLE users to USERS, which is a different identifier.
+        // Fold unquoted DDL to lowercase so test migrations match Query's SQL.
+        url = "jdbc:h2:mem:ff_test_" + UUID.randomUUID().toString().replace("-", "")
+                + ";DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE";
         database = new Database(new DriverManagerDataSource(url, "sa", ""));
     }
     public Database database() { if (closed) throw new IllegalStateException("Fixture is closed"); return database; }

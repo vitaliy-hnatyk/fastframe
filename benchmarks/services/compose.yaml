@@ -1,0 +1,28 @@
+name: fastframe-bench
+services:
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_USER: ffbench
+      POSTGRES_PASSWORD: ffbench
+      POSTGRES_DB: ffbench
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-benchmark.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ffbench -d ffbench"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    # No persistent volume; every 'down' discards benchmark-only data.
+  redis:
+    image: redis:7.4.2-alpine
+    ports:
+      - "127.0.0.1:56379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20

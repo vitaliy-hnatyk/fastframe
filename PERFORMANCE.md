@@ -1,3 +1,28 @@
+## FastFrame v0.22 — five benchmark suites
+
+The new **Async I/O & JWT** benchmark joins Concurrency Scaling, Target RPS/p99,
+JSON Sizes, and PostgreSQL/Redis. It compares FastFrame, Micronaut and Laravel Octane
+using actual outbound HTTP calls with 10/50/200 ms upstream latency and real HS256
+signature validation; see [benchmarks/ASYNC_JWT.md](benchmarks/ASYNC_JWT.md).
+
+```bash
+python3 benchmarks/async_jwt.py --frameworks fastframe micronaut laravel \
+  --cases async_10 async_50 async_200 jwt --duration 30s \
+  --warmup 5s --concurrency 64 --repeats 3
+```
+
+## FastFrame v0.22 — Extended HTTP + Database Benchmark Suite
+
+Both load models are available:
+
+- **Real PostgreSQL + Redis operations:** SELECT, INSERT, UPDATE, transaction, Redis GET/SET (`benchmarks/DATABASE_REDIS.md`).
+- **Closed-loop concurrency scaling:** 1–1,024 clients, 30s per level (`benchmarks/CONCURRENCY.md`).
+- **Open-loop target RPS and p99:** fixed arrival intensity, 60s per level using Grafana k6 (`benchmarks/TARGET_RPS.md`).
+
+The latter shows target-vs-actual throughput, dropped iterations and latency under saturation.
+Both use the same FastFrame/Micronaut/Laravel Octane endpoints. Benchmark output is
+measured on the user's computer; no performance advantage is asserted by default.
+
 # FastFrame v0.21 — Performance and memory diagnostics
 
 Java 21 · Windows 10/11 / Linux / macOS · Netty 4.2.x.
@@ -68,3 +93,32 @@ The script starts one benchmark server on `localhost:18080`, enables JFR using J
 * The Netty HTTP pipeline still allocates `Request`, `Pending`, headers and a request ID per request. No claim of "zero allocation" or "zero copy" is made.
 * This is experimental code. Full Maven/Netty/JUnit integration and Windows PowerShell behavior require verification in CI and on a Windows host.
 * If response bytes, HTTP headers or status change under load, treat it as a correctness regression, not a performance win.
+
+## Laravel PHP comparison
+
+The HTTP benchmark suite also supports **Laravel 13 / Octane + FrankenPHP**.
+Install PHP 8.3+, Composer 2 and `hey`, then:
+
+```bash
+bash benchmarks/build.sh --with-laravel
+python3 benchmarks/preflight.py --frameworks fastframe micronaut laravel
+python3 benchmarks/run.py --frameworks fastframe micronaut laravel --laravel-server octane --duration 30s --warmup 10s --concurrency 64 --repeats 5
+```
+
+For a development-only server use `--laravel-server artisan` and
+`python3 benchmarks/setup_laravel.py` (no Octane required). These two server modes
+are distinct in `results.csv`. Java heap size cannot be compared directly with PHP
+worker memory, and this version deliberately leaves Laravel RSS/CPU cells empty
+until process-tree sampling is available. See [benchmarks/README.md](benchmarks/README.md).
+
+
+For JSON payload-size response benchmarking (1KiB–1MiB) on FastFrame, Micronaut and Laravel Octane, see [benchmarks/JSON_SIZES.md](benchmarks/JSON_SIZES.md).
+
+## v0.22 — 60-minute resource stability soak
+
+Use `python3 benchmarks/soak.py --frameworks fastframe micronaut laravel --rate 1000 --duration 3600s`
+with k6 and psutil installed. See [`benchmarks/SOAK.md`](benchmarks/SOAK.md).
+
+The new report charts RSS, Java heap, CPU cores, cumulative GC work and intermittent probe errors;
+final request errors/drops/p99 come directly from k6. PHP heap/GC are intentionally marked N/A.
+Rising RSS alone is not proof of a leak. Each framework is tested sequentially for one hour.

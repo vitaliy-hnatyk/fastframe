@@ -8,7 +8,7 @@ $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("fastframe-cli-smoke-" + [g
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
 try {
     Invoke-FastFrameMaven -Parameters @('-B', '-ntp', '-pl', 'framework-cli', '-am', 'clean', 'verify')
-    $jar = Join-Path $root 'framework-cli\target\framework-cli-0.21.0-SNAPSHOT.jar'
+    $jar = Join-Path $root 'framework-cli\target\framework-cli-0.22.0-SNAPSHOT.jar'
     $java = Join-Path $env:JAVA_HOME 'bin\java.exe'
     & $java '-jar' $jar 'make:controller' 'Post' '--root' $temp
     if ($LASTEXITCODE -ne 0) { throw 'Controller generation failed' }

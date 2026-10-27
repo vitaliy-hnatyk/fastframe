@@ -10,7 +10,7 @@ try {
     New-Item -ItemType Directory -Path $tmp -Force | Out-Null
     try {
         $src = Join-Path $root 'scripts\ConfigSmoke.java'
-        $jar = Join-Path $root 'framework-config\target\framework-config-0.21.0-SNAPSHOT.jar'
+        $jar = Join-Path $root 'framework-config\target\framework-config-0.22.0-SNAPSHOT.jar'
         & (Join-Path $env:JAVA_HOME 'bin\javac.exe') '-cp' $jar '-d' $tmp $src
         if ($LASTEXITCODE -ne 0) { throw 'Config smoke compilation failed' }
         & (Join-Path $env:JAVA_HOME 'bin\java.exe') '-cp' "$jar;$tmp" 'ConfigSmoke'
