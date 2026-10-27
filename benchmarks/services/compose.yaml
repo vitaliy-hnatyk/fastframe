@@ -11,7 +11,9 @@ services:
     volumes:
       - ./schema.sql:/docker-entrypoint-initdb.d/01-benchmark.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ffbench -d ffbench"]
+      # TCP prevents a temporary Unix-socket-only init server from reporting
+      # healthy before /docker-entrypoint-initdb.d/01-benchmark.sql completes.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ffbench -d ffbench >/dev/null 2>&1 && psql -U ffbench -d ffbench -tAc 'SELECT count(*) FROM bench_counter' | grep -qx '2'"]
       interval: 2s
       timeout: 2s
       retries: 20

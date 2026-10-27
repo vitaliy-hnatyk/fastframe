@@ -94,7 +94,7 @@ class ParseTest(unittest.TestCase):
             target_rps.save_rows(directory,values)
             with (directory/'target-rps-results.csv').open(newline='') as f:
                 self.assertEqual(next(csv.DictReader(f))['target_rps'],'100')
-            self.assertEqual(json.loads((directory/'target-rps-results.json').read_text())[0]['requests'],6000)
+            self.assertEqual(json.loads((directory/'target-rps-results.json').read_text(encoding="utf-8"))[0]['requests'],6000)
 
 
 class ReportTest(unittest.TestCase):
@@ -134,7 +134,7 @@ class ReportTest(unittest.TestCase):
             target_rps_report.make_reports([raw()],metadata,out)
             for name in ['report.html','report.md','target-rps-summary.csv','target-rps-summary.json']:
                 self.assertTrue((out/name).exists(),name)
-            self.assertIn('incomplete', (out/'report.md').read_text())
+            self.assertIn('incomplete', (out/'report.md').read_text(encoding="utf-8"))
 
 
 class LifecycleTest(unittest.TestCase):

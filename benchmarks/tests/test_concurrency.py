@@ -74,8 +74,8 @@ class ConcurrencySuiteTest(unittest.TestCase):
             path = Path(temp)
             summary = make_reports(rows, metadata, path)
             self.assertEqual(len(summary), 3)
-            html = (path / 'report.html').read_text()
-            md = (path / 'report.md').read_text()
+            html = (path / 'report.html').read_text(encoding="utf-8")
+            md = (path / 'report.md').read_text(encoding="utf-8")
             self.assertIn('<svg', html)
             self.assertIn('laravel-octane', html)
             self.assertIn('0 | incomplete', md)
@@ -83,7 +83,7 @@ class ConcurrencySuiteTest(unittest.TestCase):
             self.assertNotIn('NaN', html)
             with (path / 'concurrency-summary.csv').open() as infile:
                 self.assertEqual(len(list(csv.DictReader(infile))), 3)
-            self.assertTrue(json.loads((path / 'concurrency-summary.json').read_text()))
+            self.assertTrue(json.loads((path / 'concurrency-summary.json').read_text(encoding="utf-8")))
 
     def test_plot_html_escapes_user_controlled_values(self):
         bad = sample(framework='<script>alert(1)</script>')
@@ -96,8 +96,8 @@ class ConcurrencySuiteTest(unittest.TestCase):
         metadata = {'repeats': 1, 'frameworks': ['fastframe'], 'cases': ['plain'], 'levels': [1]}
         with tempfile.TemporaryDirectory() as temp:
             make_reports([], metadata, Path(temp))
-            self.assertIn('No valid completed', (Path(temp)/'report.html').read_text())
-            self.assertIn('incomplete', (Path(temp)/'report.md').read_text())
+            self.assertIn('No valid completed', (Path(temp)/'report.html').read_text(encoding="utf-8"))
+            self.assertIn('incomplete', (Path(temp)/'report.md').read_text(encoding="utf-8"))
 
     def test_server_run_records_all_levels_and_always_stops(self):
         args = SimpleNamespace(port=18080, laravel_server='octane', laravel_workers=4,

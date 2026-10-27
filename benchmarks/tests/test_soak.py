@@ -76,7 +76,7 @@ class SoakTest(unittest.TestCase):
             soak.save_state(path,[result],[sample])
             with (path/'soak-results.csv').open() as handle:
                 self.assertEqual(len(list(__import__('csv').DictReader(handle))),1)
-            self.assertEqual(json.loads((path/'soak-timeseries.json').read_text())[0]['elapsed_s'],0)
+            self.assertEqual(json.loads((path/'soak-timeseries.json').read_text(encoding="utf-8"))[0]['elapsed_s'],0)
             self.assertFalse(list(path.glob('*.tmp')))
 
     def test_report_incomplete_is_not_pass_and_php_na(self):
@@ -97,7 +97,7 @@ class SoakTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             result=soak_report.make_reports(rows,series,meta,Path(folder))
             self.assertEqual(result[0]['status'],'INCOMPLETE')
-            page=(Path(folder)/'report.html').read_text()
+            page=(Path(folder)/'report.html').read_text(encoding="utf-8")
             self.assertIn('INCOMPLETE',page)
             self.assertIn('N/A',page)
             self.assertIn('<svg',page)

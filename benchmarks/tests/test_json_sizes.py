@@ -83,14 +83,14 @@ class ReportTests(unittest.TestCase):
             json_sizes_report.make_reports([row(repeat=1),row(repeat=2)],meta,target)
             for file in ('report.html','report.md','json-sizes-summary.csv','json-sizes-summary.json'):
                 self.assertTrue((target/file).exists(),file)
-            html=(target/'report.html').read_text()
+            html=(target/'report.html').read_text(encoding="utf-8")
             self.assertIn('MiB/s',html)
             self.assertIn('svg',html)
             self.assertIn('micronaut',html)
             self.assertIn('FastFrame v0.22',html)
-            self.assertIn('incomplete',(target/'report.md').read_text())
+            self.assertIn('incomplete',(target/'report.md').read_text(encoding="utf-8"))
             json_sizes_report.make_reports([],meta,target)
-            self.assertIn('No valid complete measurements', (target/'report.html').read_text())
+            self.assertIn('No valid complete measurements', (target/'report.html').read_text(encoding="utf-8"))
 
     def test_atomic_results(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -99,7 +99,7 @@ class ReportTests(unittest.TestCase):
             with (dest/'json-sizes-results.csv').open(newline='',encoding='utf-8') as fp:
                 data=list(csv.DictReader(fp))
             self.assertEqual(data[0]['size'],'1kb')
-            self.assertEqual(len(json.loads((dest/'json-sizes-results.json').read_text())),1)
+            self.assertEqual(len(json.loads((dest/'json-sizes-results.json').read_text(encoding="utf-8"))),1)
 
 
 class LifecycleTests(unittest.TestCase):

@@ -1,3 +1,28 @@
+## v0.22.0 — PostgreSQL benchmark initialization CI hotfix (2026-10-27)
+
+- Fix `benchmarks/services/schema.sql`: seed `bench_counter.counter_value`, not the nonexistent `value` column; the previous script made `postgres:16.6-alpine` exit during first initialization.
+- Make PostgreSQL Docker health checks wait for the final TCP listener **and** the two seeded counter rows (not just a temporary init socket).
+- Recreate the dedicated `fastframe-bench` Compose containers with fresh anonymous volumes before benchmark runs to avoid carrying half-initialized databases into retries.
+- Print `docker compose ps -a` and the last 100 lines of PostgreSQL/Redis logs when startup fails; with `--stop-services`, clean up even after startup failure (`down --volumes --remove-orphans`).
+- Add five benchmark integration-contract regression tests: seed SQL, schema health, fresh startup, actionable logs and cleanup. PostgreSQL/Docker integration still needs CI or a host with Docker.
+- No runtime framework/HTTP endpoint changes, and no benchmark RPS claims.
+
+## v0.22.0 — Benchmark source smoke CI hotfix (2026-10-27)
+
+- Fix `scripts/benchmark-smoke.sh` on GitHub Actions: its standalone `javac` compilation now targets explicitly listed core HTTP/JSON/async/JWT benchmark sources rather than compiling DB/Redis integration classes without their Maven dependencies.
+- Keep `DbRedisWorkload` / `DbRedisController` in the **full** `benchmark-fastframe` Maven package build; no production endpoint or Maven dependency removed.
+- Add `test_benchmark_smoke.py` guarding the zero-external-dependency javac scope and the separate full Maven CI step.
+- Label the CI smoke step to reflect its scope; retain Python benchmark suite execution in the smoke script.
+- The standalone smoke and all 99 Python tests pass on Linux/Java 21 (two platform-specific tests skipped). Full Maven build is not available in the local environment and must be verified by GitHub Actions.
+
+## v0.22.0 — Windows CI benchmark compatibility hotfix (2026-10-27)
+
+- Use explicit UTF-8 decoding for benchmark report fixture reads on Windows (including the `×` ratio sign), matching existing UTF-8 report writers.
+- Treat WinSock `10013`/EACCES as an unavailable/restricted TCP port, not harmless TIME_WAIT; avoid `SO_REUSEADDR` on Windows to prevent an accidental shared port.
+- Run POSIX `ps` integration tests only on Unix; preserve native WinAPI tests for Windows RSS and CPU measurements.
+- Add regression coverage for Windows port access-denied responses, native metrics selection and report UTF-8 parity.
+- No changes to Netty, Java benchmarks, HTTP routes, or benchmark metric calculations.
+
 ## v0.22 — k6 fixed-arrival warmup hotfix
 
 - Fix `ReferenceError: maxVUs is not defined` in the shared `benchmarks/target_rps.js` workload by mapping the k6 `maxVUs` option to the defined `maxVus` value.

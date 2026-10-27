@@ -97,7 +97,7 @@ jobs:
         run: mvn -B -ntp -pl framework-database -am test
       - name: Processor smoke and negative tests
         run: bash scripts/core-smoke.sh
-      - name: Benchmark source smoke tests (no external load)
+      - name: Dependency-free HTTP benchmark routes smoke (javac)
         run: bash scripts/benchmark-smoke.sh
       - name: Build FastFrame benchmark app
         run: mvn -B -ntp -pl benchmarks/fastframe-app -am clean package

@@ -302,3 +302,19 @@ python3 -m pip install psutil
 python3 benchmarks/soak.py --frameworks fastframe micronaut laravel --case json \
   --rate 1000 --duration 3600s --warmup 15s --sample-interval 10
 ```
+
+## CI benchmark Java source smoke vs Maven build
+
+`bash scripts/benchmark-smoke.sh` compiles dependency-free benchmark HTTP, JSON,
+routing, async and JWT sources with JDK 21 `javac` and FastFrame's annotation
+processor, then runs the local route smoke and benchmark Python tests. This
+check intentionally **does not** compile `DbRedisWorkload` or
+`DbRedisController`, which use third-party HikariCP and Redis adapter classes.
+Those files are compiled and packaged by the **separate** Maven CI step:
+
+```bash
+mvn -B -ntp -pl benchmarks/fastframe-app -am clean package
+```
+
+Do not blindly compile every Java file through standalone `javac` without a
+Maven-resolved classpath. Both checks have different purposes and are required.

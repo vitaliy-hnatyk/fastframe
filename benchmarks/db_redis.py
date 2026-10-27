@@ -50,13 +50,35 @@ def docker_run(*tail, timeout=45):
     return proc.stdout.strip()
 
 
+def compose_failure_diagnostics():
+    """Collect bounded container status/logs so CI reports the underlying SQL error."""
+    sections=[]
+    for command in (('ps','-a'),('logs','--no-color','--tail','100','postgres','redis')):
+        try:
+            result=subprocess.run(compose_cmd(*command),capture_output=True,text=True,timeout=20)
+            output=('\n'.join(part for part in (result.stdout,result.stderr) if part)).strip()
+            sections.append('$ docker compose '+' '.join(command)+'\n'+(output[-12000:] or '(no output)'))
+        except (OSError,subprocess.TimeoutExpired) as ex:
+            sections.append('$ docker compose '+' '.join(command)+'\n(diagnostics unavailable: '+str(ex)+')')
+    return '\n'.join(sections)
+
+
 def start_services():
-    # Fail closed if Docker is not present; never run an in-memory replacement.
-    docker_run('up','-d','--wait',timeout=150)
-    # Service health is checked by Compose; force a query too.
-    assert docker_run('exec','-T','postgres','pg_isready','-U','ffbench','-d','ffbench').endswith('accepting connections')
-    if docker_run('exec','-T','redis','redis-cli','--raw','PING')!='PONG':
-        raise RuntimeError('Redis not ready')
+    # Benchmark-only Compose stack. Discard anonymous PostgreSQL data volumes left
+    # by failed init scripts; restarting such a container may skip schema creation.
+    try:
+        docker_run('up','-d','--wait','--force-recreate','--renew-anon-volumes',timeout=180)
+        # Compose checks health; verify PostgreSQL accepts the benchmark connection.
+        readiness=docker_run('exec','-T','postgres','pg_isready','-U','ffbench','-d','ffbench')
+        if not readiness.endswith('accepting connections'):
+            raise RuntimeError('PostgreSQL not ready: '+readiness)
+        counters=db_query('SELECT id,counter_value FROM bench_counter ORDER BY id;').splitlines()
+        if counters!=['1|0','2|0']:
+            raise RuntimeError('PostgreSQL seed data not initialized: '+repr(counters))
+        if docker_run('exec','-T','redis','redis-cli','--raw','PING')!='PONG':
+            raise RuntimeError('Redis not ready')
+    except (RuntimeError,subprocess.TimeoutExpired) as ex:
+        raise RuntimeError(str(ex)+'\nDocker Compose diagnostics:\n'+compose_failure_diagnostics()) from ex
 
 
 def reset_state():
@@ -246,9 +268,9 @@ def main(argv=None):
           'command':sys.argv}
     if 'laravel' in args.frameworks:meta.update(laravel_metadata())
     (dest/'environment.json').write_text(json.dumps(meta,indent=2),encoding='utf-8')
-    rows=[];status=0;services_ready=False
+    rows=[];status=0
     try:
-        start_services();services_ready=True
+        start_services()
         for repeat in range(1,args.repeats+1):
             order=list(args.frameworks)
             if repeat%2==0:order.reverse()
@@ -257,8 +279,8 @@ def main(argv=None):
         print(f'Database/Redis benchmark stopped: {ex}',file=sys.stderr,flush=True)
         status=1
     finally:
-        if services_ready and args.stop_services:
-            try:docker_run('down',timeout=90)
+        if args.stop_services:
+            try:docker_run('down','--volumes','--remove-orphans',timeout=90)
             except Exception as ex:print(f'Compose cleanup warning: {ex}',file=sys.stderr)
         save_rows(dest,rows)
         try:make_reports(rows,meta,dest)

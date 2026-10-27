@@ -94,7 +94,7 @@ def csv_statistics(path: Path) -> dict:
     """hey -o csv response-time and offset are in seconds; status-code is HTTP status."""
     latencies = []
     ok = errors = 0
-    with path.open(newline="") as source:
+    with path.open(newline="", encoding="utf-8") as source:
         reader = csv.DictReader(source)
         if reader.fieldnames is None or not {"response-time", "status-code"}.issubset(reader.fieldnames):
             raise ValueError("Unexpected hey CSV format; need response-time and status-code columns")
@@ -289,7 +289,10 @@ def check_port_available(port: int) -> None:
     listen() also checks that a second listener cannot claim the port.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Windows SO_REUSEADDR can allow another process to bind a live port.
+        # On POSIX it permits re-binding a port left in TIME_WAIT.
+        if os.name != 'nt':
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind(('127.0.0.1', port))
         probe.listen(1)
 
@@ -298,7 +301,15 @@ def port_has_listener(port: int) -> bool:
     """Check for a real listening process; TIME_WAIT alone won't accept connects."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(0.25)
-        return probe.connect_ex(('127.0.0.1', port)) == 0
+        try:
+            result = probe.connect_ex(('127.0.0.1', port))
+        except OSError as exc:
+            # Winsock WSAEACCES (10013) is sometimes reported for a port
+            # already owned by another socket or blocked by local policy.
+            # Treat it as unavailable, not as an empty listener slot.
+            return sys.platform == 'win32' and (getattr(exc, 'winerror', None) == 10013
+                                                 or exc.errno == errno.EACCES)
+        return result == 0 or (sys.platform == 'win32' and result in (10013, errno.EACCES))
 
 
 def select_server_port(preferred: int, wait_s: float = 2.0) -> int:
@@ -322,8 +333,20 @@ def select_server_port(preferred: int, wait_s: float = 2.0) -> int:
         check_port_available(preferred)
         return preferred
     except OSError as exc:
-        if exc.errno != errno.EADDRINUSE:
+        # Access denied is NOT harmless TIME_WAIT: Windows returns 10013
+        # when a port is reserved or restricted. Never silently fall back,
+        # which could conceal an active server and invalidate a benchmark.
+        if exc.errno in (errno.EACCES, errno.EPERM) or getattr(exc, 'winerror', None) == 10013:
+            raise OSError(errno.EACCES,
+                          f'Active listener or restricted port on 127.0.0.1:{preferred}; '
+                          f'check the owning process and Windows TCP exclusions') from exc
+        if exc.errno != errno.EADDRINUSE and getattr(exc, 'winerror', None) != 10048:
             raise
+        # The socket could have started listening after the initial probe.
+        if port_has_listener(preferred):
+            raise OSError(errno.EADDRINUSE,
+                          f'Active listener on 127.0.0.1:{preferred}; '
+                          f'stop the existing server before benchmarking') from exc
     # A port with no listener may still be unavailable due to TIME_WAIT.
     # A new ephemeral port avoids waiting for the TCP lifetime to expire.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:

@@ -168,11 +168,11 @@ class ReportTests(unittest.TestCase):
             self.assertTrue(result[0]['valid'])
             for name in ('report.html','report.md','async-jwt-summary.csv','async-jwt-summary.json'):
                 self.assertTrue((directory/name).is_file())
-            self.assertIn('<svg',(directory/'report.html').read_text())
-            self.assertIn('incomplete',(directory/'report.md').read_text())
-            self.assertIn('HS256',(directory/'report.md').read_text())
+            self.assertIn('<svg',(directory/'report.html').read_text(encoding="utf-8"))
+            self.assertIn('incomplete',(directory/'report.md').read_text(encoding="utf-8"))
+            self.assertIn('HS256',(directory/'report.md').read_text(encoding="utf-8"))
             async_jwt_report.make_reports([],meta,directory)
-            self.assertIn('No complete validated measurements yet',(directory/'report.html').read_text())
+            self.assertIn('No complete validated measurements yet',(directory/'report.html').read_text(encoding="utf-8"))
 
     def test_snapshot_roundtrip(self):
         with tempfile.TemporaryDirectory() as path:
@@ -181,7 +181,7 @@ class ReportTests(unittest.TestCase):
             async_jwt.save_rows(folder,[row])
             with (folder/'async-jwt-results.csv').open() as fp:
                 self.assertEqual(list(csv.DictReader(fp))[0]['framework'],'fastframe')
-            self.assertEqual(len(json.loads((folder/'async-jwt-results.json').read_text())),1)
+            self.assertEqual(len(json.loads((folder/'async-jwt-results.json').read_text(encoding="utf-8"))),1)
 
 
 class LifecycleTests(unittest.TestCase):

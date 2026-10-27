@@ -88,6 +88,7 @@ class ResultsTest(unittest.TestCase):
             child.terminate()
             child.wait(timeout=5)
 
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX ps monitoring; Windows is covered by native WinAPI tests')
     def test_ps_real_current_process(self):
         import os
         import shutil
@@ -99,6 +100,7 @@ class ResultsTest(unittest.TestCase):
         self.assertIsNotNone(cpu)
         self.assertGreaterEqual(cpu, 0)
 
+    @unittest.skipIf(sys.platform == 'win32', 'POSIX ps monitoring; Windows is covered by native WinAPI tests')
     def test_ps_full_metrics_sampling_with_local_process(self):
         """Exercise the ps backend while a load-like command emits hey CSV."""
         import shutil

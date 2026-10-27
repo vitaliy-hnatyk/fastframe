@@ -65,3 +65,22 @@ Before **every case and repeat**, the runner truncates `bench_events`, zeros bot
 **No RPS claims are made until a real full HTTP run has completed.** This suite coexists with existing `concurrency.py`, `target_rps.py` and `json_sizes.py`.
 
 CI includes a **real PostgreSQL/Redis integration smoke** for all three application route implementations. Laravel is started using `artisan serve` in CI; **production Octane/FrankenPHP is the default local performance target** and still requires an external Octane-enabled host to validate throughput.
+
+## PostgreSQL init troubleshooting (v0.22 CI hotfix)
+
+The benchmark stack uses a fixed, **dedicated** Compose project name, `fastframe-bench`. Every runner invocation recreates the PostgreSQL/Redis containers with fresh anonymous volumes. This prevents a failed init script from leaving a partial PostgreSQL data directory that a later run would otherwise reuse. **Do not store persistent data in this benchmark stack.**
+
+The seed schema inserts two rows into `bench_counter(id,counter_value)` and the health check verifies that the PostgreSQL final TCP server has both rows. If `docker compose up --wait` fails, the runner now prints `docker compose ps -a` and recent container logs automatically. Manual diagnosis:
+
+```bash
+docker compose -f benchmarks/services/compose.yaml ps -a
+docker compose -f benchmarks/services/compose.yaml logs --no-color --tail 100 postgres redis
+```
+
+To remove only this project's benchmark containers **and volumes** before a retry:
+
+```bash
+docker compose -f benchmarks/services/compose.yaml down --volumes --remove-orphans
+```
+
+`--stop-services` performs the same cleanup on exit, including failed startup. Neither action affects other Compose projects. Avoid starting benchmark containers alongside another copy of this project using the same `fastframe-bench` Compose project name.

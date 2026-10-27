@@ -219,3 +219,14 @@ $env:FF_HSTS = 'false'
 ```
 
 For live Windows deployments, move the checkout out of `C:\xampp\www` and see `PRODUCTION.md`. The limiter keys on Netty socket IP (likely Apache's IP behind XAMPP), not `X-Forwarded-For`.
+
+
+### Benchmark Python tests on Windows CI (v0.22 hotfix)
+
+Benchmark reports are encoded in UTF-8. Windows PowerShell users can run:
+
+```powershell
+python -m unittest discover -s benchmarks/tests -v
+```
+
+The POSIX `ps` integration tests are skipped on Windows because RSS/CPU monitoring uses native Windows APIs there. An occupied/restricted TCP port is rejected rather than silently reused; inspect it with `Get-NetTCPConnection -LocalPort 18080` before starting a load test.

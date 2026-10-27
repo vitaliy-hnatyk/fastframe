@@ -2,6 +2,8 @@
 import argparse
 import csv
 import json
+import sqlite3
+from contextlib import closing
 import sys
 import tempfile
 import unittest
@@ -33,6 +35,61 @@ class ContractTests(unittest.TestCase):
 
     def test_invalid_case(self):
         with self.assertRaisesRegex(ValueError,'Unknown'):db_redis.request_spec('hack','http://localhost')
+
+
+    def test_postgres_seed_sql_initializes_counter_columns(self):
+        # Small common SQL subset runs in SQLite to catch misspelled seed
+        # columns without needing Docker in the fast unit suite. Real PostgreSQL
+        # validation is covered by the separate integration smoke job.
+        schema=db_redis.ROOT/'benchmarks/services/schema.sql'
+        with closing(sqlite3.connect(':memory:')) as connection:
+            connection.executescript(schema.read_text(encoding='utf-8'))
+            self.assertEqual(connection.execute(
+                'SELECT id,counter_value FROM bench_counter ORDER BY id').fetchall(),
+                [(1,0),(2,0)])
+            self.assertEqual(connection.execute(
+                'SELECT payload FROM bench_lookup WHERE id=1').fetchone(), ('ok',))
+            self.assertEqual(connection.execute(
+                'SELECT count(*) FROM bench_events').fetchone(), (0,))
+
+    def test_compose_postgres_health_waits_for_seed_data(self):
+        compose=(db_redis.ROOT/'benchmarks/services/compose.yaml').read_text(encoding='utf-8')
+        self.assertIn('pg_isready -h 127.0.0.1',compose)
+        self.assertIn('SELECT count(*) FROM bench_counter',compose)
+        self.assertIn('schema.sql:/docker-entrypoint-initdb.d/',compose)
+
+    def test_service_start_requires_fresh_volume_and_initialized_schema(self):
+        calls=[]
+        def fake_docker(*command,**options):
+            calls.append(command)
+            if command[0]=='exec' and 'pg_isready' in command:
+                return '/var/run/postgresql:5432 - accepting connections'
+            if command[0]=='exec' and 'psql' in command:
+                return '1|0\n2|0'
+            if command[0]=='exec' and 'redis-cli' in command:
+                return 'PONG'
+            return ''
+        with mock.patch.object(db_redis,'docker_run',side_effect=fake_docker):
+            db_redis.start_services()
+        self.assertIn('--force-recreate',calls[0])
+        self.assertIn('--renew-anon-volumes',calls[0])
+        self.assertTrue(any(any('SELECT id,counter_value FROM bench_counter' in part for part in c) for c in calls))
+
+    def test_start_failure_includes_postgres_logs(self):
+        proc=mock.Mock(returncode=0,stdout='postgres | ERROR: column "value" does not exist',stderr='')
+        with mock.patch.object(db_redis,'docker_run',side_effect=RuntimeError('up failed')) as run, \
+             mock.patch.object(db_redis.subprocess,'run',return_value=proc) as subprocess_run:
+            with self.assertRaisesRegex(RuntimeError,'column "value" does not exist'):
+                db_redis.start_services()
+        self.assertEqual(subprocess_run.call_count,2)
+        self.assertIn('logs',subprocess_run.call_args.args[0])
+        run.assert_called_once()
+
+    def test_failure_with_stop_services_cleans_benchmark_volumes(self):
+        # A failed initial SQL script should not leave stale anonymous volumes.
+        source=(db_redis.ROOT/'benchmarks/db_redis.py').read_text(encoding='utf-8')
+        self.assertIn("if args.stop_services:", source)
+        self.assertIn("docker_run('down','--volumes','--remove-orphans'",source)
 
     def test_docker_only_and_reset_sql(self):
         calls=[]
@@ -104,13 +161,13 @@ class ReportTests(unittest.TestCase):
             self.assertTrue(summary[0]['valid'])
             for file in ('db-redis-summary.csv','db-redis-summary.json','report.html','report.md'):
                 self.assertTrue((folder/file).is_file(),file)
-            content=(folder/'report.html').read_text()
+            content=(folder/'report.html').read_text(encoding="utf-8")
             self.assertIn('<svg',content)
             self.assertIn('p99',content)
             self.assertIn('laravel-octane',content)
-            self.assertIn('incomplete',(folder/'report.md').read_text())
+            self.assertIn('incomplete',(folder/'report.md').read_text(encoding="utf-8"))
             db_redis_report.make_reports([],meta,folder)
-            self.assertIn('No complete validated measurements yet',(folder/'report.html').read_text())
+            self.assertIn('No complete validated measurements yet',(folder/'report.html').read_text(encoding="utf-8"))
 
     def test_atomic_csv_json_snapshots(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -119,7 +176,7 @@ class ReportTests(unittest.TestCase):
             db_redis.save_rows(folder,[data])
             with (folder/'db-redis-results.csv').open() as fp:
                 self.assertEqual(list(csv.DictReader(fp))[0]['framework'],'fastframe')
-            self.assertEqual(len(json.loads((folder/'db-redis-results.json').read_text())),1)
+            self.assertEqual(len(json.loads((folder/'db-redis-results.json').read_text(encoding="utf-8"))),1)
 
 
 class LifecycleTests(unittest.TestCase):

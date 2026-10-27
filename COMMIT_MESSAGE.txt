@@ -1,5 +1,1 @@
-fix(bench): repair k6 maxVUs reference for soak and target RPS
-
-- bind maxVUs option to correctly cased maxVus variable
-- add k6 JavaScript module initialization and summary regression tests
-- preserve Micronaut HikariCP/Lettuce dependency fix
+fix(bench): repair PostgreSQL seed schema and Compose startup diagnostics

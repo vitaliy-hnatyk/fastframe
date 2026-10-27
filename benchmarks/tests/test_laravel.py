@@ -31,14 +31,14 @@ class LaravelBenchmarkTest(unittest.TestCase):
         self.assertEqual(result_framework('laravel', self.settings), 'laravel-artisan')
 
     def test_php_source_matches_all_endpoints(self):
-        source = (TEMPLATE / 'routes/bench.php').read_text()
+        source = (TEMPLATE / 'routes/bench.php').read_text(encoding="utf-8")
         self.assertIn("$request->input('message')", source)
         for _, path, _, _ in CASES.values():
             if '/bench/route/' in path:
                 continue
             self.assertIn(path, source)
         self.assertIn('/bench/route/{id}', source)
-        bootstrap = (TEMPLATE / 'bootstrap/app.php').read_text()
+        bootstrap = (TEMPLATE / 'bootstrap/app.php').read_text(encoding="utf-8")
         self.assertIn("base_path('routes/bench.php')", bootstrap)
         self.assertIn('withRouting(', bootstrap)
 
