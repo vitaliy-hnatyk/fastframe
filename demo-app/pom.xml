@@ -31,7 +31,7 @@
         <dependency><groupId>dev.fastframe</groupId><artifactId>framework-migrations</artifactId><version>${project.version}</version></dependency>
         <!-- H2 only for zero-setup local demo; production drivers are opt-in. -->
         <dependency>
-            <groupId>com.h2database</groupId><artifactId>h2</artifactId><version>2.3.232</version><scope>runtime</scope>
+            <groupId>com.h2database</groupId><artifactId>h2</artifactId><version>2.5.252</version><scope>runtime</scope>
         </dependency>
         <!-- Ensures Maven reactor -am includes framework-processor; not packaged at runtime. -->
         <dependency>

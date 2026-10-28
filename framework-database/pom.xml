@@ -8,6 +8,6 @@
     <!-- JDBC is in the JDK; drivers and connection pools are opt-in. -->
     <dependencies>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><version>2.3.232</version><scope>test</scope></dependency>
+        <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId><version>2.5.252</version><scope>test</scope></dependency>
     </dependencies>
 </project>
