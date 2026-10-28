@@ -1,1 +1,3 @@
-fix(bench): normalize PowerShell JSON-size labels and quote Windows CI args
+feat(netty): add TLS HTTP2 WebSocket SSE and Caddy HTTP3 edge support
+
+Add shared routing APIs and protocol comparison suite without changing legacy HTTP/1.1 defaults.

@@ -15,6 +15,10 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.DefaultHttpResponse;
+import io.netty.handler.codec.http.HttpResponse;
+import io.netty.handler.codec.http.websocketx.*;
+import io.netty.handler.codec.http2.Http2StreamChannel;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -102,6 +106,8 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         }
         Pending pending = new Pending(incoming.protocolVersion(), incoming.method().name(),
                 HttpUtil.isKeepAlive(incoming));
+        String upgrade=incoming.headers().get(HttpHeaderNames.UPGRADE);
+        if(upgrade!=null&&upgrade.equalsIgnoreCase("websocket"))pending.upgradeRequest=incoming.retainedDuplicate();
         metrics.started();
         responses.addLast(pending);
         if (responses.size() >= options.maxPipelinedRequestsPerConnection()) {
@@ -246,6 +252,7 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             pending.hasPermit = false;
             permits.release();
         }
+        if(cancelRequest)releaseUpgrade(pending);
     }
 
     private void abandonQueued() {
@@ -278,6 +285,9 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
 
     private void send(ChannelHandlerContext ctx, Pending pending, boolean closeAfter) {
         Response result = pending.response;
+        if(result.sseSource()!=null){startSse(ctx,pending,result);return;}
+        if(result.webSocketHandler()!=null){startWebSocket(ctx,pending,result);return;}
+        releaseUpgrade(pending);
         byte[] body = result.body();
         boolean head = pending.method.equals("HEAD");
         boolean suppressBody = head || result.status() == 204 || result.status() == 304
@@ -325,9 +335,45 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
             }
         }
         HttpUtil.setContentLength(output, head ? body.length : (suppressBody ? 0 : body.length));
-        HttpUtil.setKeepAlive(output, !closeAfter);
+        if(!(ctx.channel() instanceof Http2StreamChannel))HttpUtil.setKeepAlive(output, !closeAfter);
         ChannelFuture sent = ctx.writeAndFlush(output);
         if (closeAfter) sent.addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static void releaseUpgrade(Pending p){if(p.upgradeRequest!=null){p.upgradeRequest.release();p.upgradeRequest=null;}}
+    private void startSse(ChannelHandlerContext ctx,Pending p,Response response){
+       releaseUpgrade(p);
+       if(!p.method.equals("GET")){ctx.close();return;}
+       HttpResponse reply=new DefaultHttpResponse(p.version,HttpResponseStatus.OK);
+       reply.headers().set(HttpHeaderNames.CONTENT_TYPE,"text/event-stream; charset=utf-8");
+       reply.headers().set(HttpHeaderNames.CACHE_CONTROL,"no-cache, no-transform");
+       reply.headers().set("X-Accel-Buffering","no");
+       reply.headers().set("X-Content-Type-Options","nosniff");
+       reply.headers().set("X-Request-ID",p.requestId);
+       if(!(ctx.channel() instanceof Http2StreamChannel))HttpUtil.setTransferEncodingChunked(reply,true);
+       ctx.writeAndFlush(reply);
+       closing=true;ctx.channel().config().setAutoRead(false);
+       var sink=new SseChannel(ctx.channel());
+       try{response.sseSource().subscribe(sink);}catch(Throwable ex){sink.close();}
+    }
+    private void startWebSocket(ChannelHandlerContext ctx,Pending p,Response response){
+       FullHttpRequest upgrade=p.upgradeRequest;p.upgradeRequest=null;
+       if(upgrade==null||!p.method.equals("GET")||ctx.channel() instanceof Http2StreamChannel||!responses.isEmpty()){
+          if(upgrade!=null)upgrade.release();ctx.close();return;
+       }
+       try{
+         boolean tls=ctx.pipeline().get(io.netty.handler.ssl.SslHandler.class)!=null;
+         String host=upgrade.headers().get(HttpHeaderNames.HOST);
+         if(host==null||host.isBlank())host="localhost";
+         var factory=new WebSocketServerHandshakerFactory((tls?"wss://":"ws://")+host+upgrade.uri(),null,true,options.maxRequestBytes());
+         WebSocketServerHandshaker handshake=factory.newHandshaker(upgrade);
+         if(handshake==null){WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());return;}
+         handshake.handshake(ctx.channel(),upgrade).addListener(f->{
+             if(!f.isSuccess()){ctx.close();return;}
+             ctx.pipeline().replace(this,"fastframe-websocket",new WebSocketFrames(response.webSocketHandler()));
+             ctx.pipeline().addBefore("fastframe-websocket","fastframe-websocket-aggregator",new WebSocketFrameAggregator(options.maxRequestBytes()));
+         });
+       }catch(Throwable ex){ctx.close();}finally{upgrade.release();}
     }
 
     // Character scan avoids regex/split/list allocations for ordinary content types.
@@ -378,6 +424,7 @@ final class NettyRequestHandler extends SimpleChannelInboundHandler<FullHttpRequ
         private final boolean keepAlive;
         private Response response;
         private Request request;
+        private FullHttpRequest upgradeRequest;
         private String allowedOrigin;
         private boolean preflight;
         private ScheduledFuture<?> timeout;

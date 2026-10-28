@@ -1,3 +1,7 @@
+## New: HTTPS/TLS 1.3, HTTP/2, WebSocket, SSE + HTTP/3 via Caddy
+
+Opt-in TLS/ALPN support in FastFrame, SSE/WebSocket response types, and Caddy HTTP/3 reverse proxy with protocol benchmark. See [TRANSPORTS.md](TRANSPORTS.md). **Full Netty Maven/integration testing pending.**
+
 ## FastFrame v0.22 — five benchmark suites
 
 The new **Async I/O & JWT** benchmark joins Concurrency Scaling, Target RPS/p99,

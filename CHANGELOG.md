@@ -1,3 +1,7 @@
+## FastFrame v0.22 — protocol transport preview
+
+Added opt-in TLS 1.3 + ALPN h2/h1 + separate h2c listener, authorized WebSocket/SSE responses, Caddy HTTP/3 QUIC edge termination, and strict protocol comparison reports. Existing HTTP/1.1 remains default. Maven and cross-protocol integration tests have not yet been run here.
+
 ## v0.22.0 — Windows PowerShell JSON-size argument hotfix (2026-10-27)
 
 - Fix `json-sizes.ps1 -Sizes 1kb,10kb,100kb,1mb`: PowerShell treats unquoted `kb`/`mb` tokens as numeric byte literals, so the previous `ValidateSet` rejected `1024` before the wrapper could launch Python.

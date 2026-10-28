@@ -17,13 +17,17 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
+import io.netty.handler.ssl.*;
+import io.netty.handler.codec.http2.*;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
 import java.time.Duration;
 import java.util.concurrent.Semaphore;
 
-/** HTTP/1.1 server; use nonblocking handlers only. */
+/** HTTP/1.1 server with optional TLS/ALPN HTTP/2 or h2c. Use nonblocking handlers only. */
 public final class NettyServer implements AutoCloseable {
     private final Router router;
     private final String host;
@@ -34,6 +38,7 @@ public final class NettyServer implements AutoCloseable {
     private final Readiness readiness;
     private final boolean accessLog;
     private final HttpSecurity security;
+    private final NettyTransport transport;
     private final ChannelGroup connections = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
     private EventLoopGroup boss;
     private EventLoopGroup workers;
@@ -54,6 +59,13 @@ public final class NettyServer implements AutoCloseable {
 
     public NettyServer(Router router, String host, int port, NettyOptions options,
                        HttpMetrics metrics, Readiness readiness, boolean accessLog, HttpSecurity security) {
+        this(router, host, port, options, metrics, readiness, accessLog, security, NettyTransport.http11());
+    }
+    public NettyServer(Router router,String host,int port,NettyOptions options,NettyTransport transport){
+        this(router,host,port,options,new HttpMetrics(),new Readiness(),false,HttpSecurity.defaults(),transport);
+    }
+    public NettyServer(Router router,String host,int port,NettyOptions options,HttpMetrics metrics,Readiness readiness,boolean accessLog,HttpSecurity security,NettyTransport transport){
+        this.transport=Objects.requireNonNull(transport);
         this.security = Objects.requireNonNull(security, "security");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.readiness = Objects.requireNonNull(readiness, "readiness");
@@ -68,6 +80,9 @@ public final class NettyServer implements AutoCloseable {
 
     public synchronized void start() throws InterruptedException {
         if (boss != null) throw new IllegalStateException("Server already started");
+        final SslContext ssl;
+        try{ssl=transport.tls()==null?null:transport.tls().build();}
+        catch(javax.net.ssl.SSLException ex){throw new IllegalStateException("Invalid TLS PEM settings",ex);}
         boss = new NioEventLoopGroup(1);
         workers = new NioEventLoopGroup();
         try {
@@ -79,10 +94,19 @@ public final class NettyServer implements AutoCloseable {
                         @Override
                         protected void initChannel(SocketChannel channel) {
                             connections.add(channel);
-                            channel.pipeline()
-                                    .addLast(new HttpServerCodec())
-                                    .addLast(new HttpObjectAggregator(options.maxRequestBytes()))
-                                    .addLast(new NettyRequestHandler(router, options, permits, metrics, accessLog, security));
+                            if(transport.h2cPriorKnowledge()) configureH2(channel.pipeline());
+                            else if(ssl==null) configureH1(channel.pipeline());
+                            else {
+                                channel.pipeline().addLast(ssl.newHandler(channel.alloc()));
+                                if(transport.tls().http2())channel.pipeline().addLast(new ApplicationProtocolNegotiationHandler(ApplicationProtocolNames.HTTP_1_1){
+                                  @Override protected void configurePipeline(ChannelHandlerContext ctx,String protocol){
+                                    if(ApplicationProtocolNames.HTTP_2.equals(protocol))configureH2(ctx.pipeline());
+                                    else if(ApplicationProtocolNames.HTTP_1_1.equals(protocol))configureH1(ctx.pipeline());
+                                    else throw new IllegalStateException("Unsupported ALPN: "+protocol);
+                                  }
+                                });
+                                else configureH1(channel.pipeline());
+                            }
                         }
                     });
             serverChannel = bootstrap.bind(host, port).sync().channel();
@@ -93,6 +117,21 @@ public final class NettyServer implements AutoCloseable {
         }
     }
 
+    private void configureH1(ChannelPipeline p){
+        p.addLast(new HttpServerCodec());p.addLast(new HttpObjectAggregator(options.maxRequestBytes()));
+        p.addLast(new NettyRequestHandler(router,options,permits,metrics,accessLog,security));
+    }
+    private void configureH2(ChannelPipeline p){
+        p.addLast(Http2FrameCodecBuilder.forServer().build());
+        p.addLast(new Http2MultiplexHandler(new ChannelInitializer<Channel>(){
+           @Override protected void initChannel(Channel stream){
+              connections.add(stream);
+              stream.pipeline().addLast(new Http2StreamFrameToHttpObjectCodec(true));
+              stream.pipeline().addLast(new HttpObjectAggregator(options.maxRequestBytes()));
+              stream.pipeline().addLast(new NettyRequestHandler(router,options,permits,metrics,accessLog,security));
+           }
+        }));
+    }
     public int boundPort() {
         if (serverChannel == null) throw new IllegalStateException("Server not started");
         return ((InetSocketAddress) serverChannel.localAddress()).getPort();

@@ -11,6 +11,8 @@ public final class Response {
     private final String contentType;
     private final byte[] body;
     private final Map<String, String> headers;
+    private final SseSource sse;
+    private final WebSocketHandler ws;
 
     private Response(int status, String contentType, byte[] body, Map<String, String> headers) {
         if (status < 100 || status > 599) throw new IllegalArgumentException("Invalid HTTP status");
@@ -18,7 +20,19 @@ public final class Response {
         this.contentType = contentType;
         this.body = body;
         this.headers = headers;
+        this.sse = null;
+        this.ws = null;
     }
+
+    private Response(int status,String contentType,byte[] body,Map<String,String> headers,SseSource sse,WebSocketHandler ws){
+        if(status<100||status>599)throw new IllegalArgumentException("Invalid HTTP status");
+        this.status=status; this.contentType=contentType; this.body=body; this.headers=headers; this.sse=sse; this.ws=ws;
+    }
+    public static Response sse(SseSource source){return new Response(200,"text/event-stream; charset=utf-8",new byte[0],Map.of(),Objects.requireNonNull(source),null);}
+    public static Response websocket(WebSocketHandler handler){return new Response(101,"application/octet-stream",new byte[0],Map.of(),null,Objects.requireNonNull(handler));}
+    public SseSource sseSource(){return sse;}
+    public WebSocketHandler webSocketHandler(){return ws;}
+
 
     public static Response text(String value) {
         return new Response(200, "text/plain; charset=utf-8",
@@ -44,7 +58,7 @@ public final class Response {
         return new Response(200, "application/json; charset=utf-8", Json.utf8(value), Map.of());
     }
 
-    public Response status(int code) { return new Response(code, contentType, body, headers); }
+    public Response status(int code) { return new Response(code, contentType, body, headers, sse, ws); }
 
     public Response header(String name, String value) {
         if (!name.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]+")) {
@@ -59,7 +73,7 @@ public final class Response {
         }
         Map<String, String> copy = new LinkedHashMap<>(headers);
         copy.put(name, value);
-        return new Response(status, contentType, body, Map.copyOf(copy));
+        return new Response(status, contentType, body, Map.copyOf(copy), sse, ws);
     }
 
     public int status() { return status; }
