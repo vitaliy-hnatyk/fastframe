@@ -105,7 +105,7 @@ jobs:
         run: mvn -B -ntp -f benchmarks/micronaut-app/pom.xml clean package
       - name: HTTP preflight both benchmark applications
         run: python3 benchmarks/preflight.py
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: Concurrency runner & HTML report integration smoke (FastFrame, Micronaut)
@@ -140,7 +140,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: Build both Java benchmark targets
@@ -262,7 +262,7 @@ jobs:
       - name: HTTP preflight on Windows
         shell: pwsh
         run: ./benchmarks/preflight.ps1
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - name: HTTP load smoke test on Windows
